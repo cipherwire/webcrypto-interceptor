@@ -47,3 +47,6 @@ solver/
 
 # Test lab site: hosted independently on VPS, never push
 test-lab/
+
+# Documentation site: hosted independently on VPS, never push
+docs-site/
