@@ -1,14 +1,14 @@
-// Heap snapshot diff — find what an action *allocated*.
+// Heap snapshot diff - find what an action *allocated*.
 //
 // Two V8 heap snapshots are taken N seconds apart (page session). Every heap
 // node id in the second snapshot that was not in the first is a new object.
-// Decoded secrets that never transit the network or the crypto boundary —
-// plaintext built in JS and kept in a closure — show up here as new strings.
+// Decoded secrets that never transit the network or the crypto boundary -
+// plaintext built in JS and kept in a closure - show up here as new strings.
 //
 // The snapshot format is one JSON blob: flat `nodes` int array (each node is
 // node_fields.length ints), flat `edges` int array laid out consecutively in
 // node order, and a `strings` table. Field layout is read from snapshot.meta
-// (Chrome versions differ — some drop trace_node_id), never hardcoded.
+// (Chrome versions differ - some drop trace_node_id), never hardcoded.
 //
 // V8 lazily flattens "a"+"b": a freshly built value stays a "concatenated
 // string" (or "sliced string" from .slice) until accessed, so a value search
@@ -54,7 +54,7 @@ function parseSnapshot(data) {
     };
 }
 
-// Node accessors — index math in one place.
+// Node accessors - index math in one place.
 function nodeType(s, i) { return s.nodeTypes[s.nodes[i * s.nw + s.fType]]; }
 function nodeName(s, i) { return s.strings[s.nodes[i * s.nw + s.fName]]; }
 function nodeId(s, i) { return s.nodes[i * s.nw + s.fId]; }
@@ -113,7 +113,7 @@ function edgeLabel(s, edgeType, rawName) {
     }
 }
 
-// A fresh value is only "live" if a JS object or closure holds it — V8
+// A fresh value is only "live" if a JS object or closure holds it - V8
 // internals retain type-name strings and other noise via system edges.
 function hasUserRetainer(s, idx, retainers) {
     const list = retainers.get(idx);
@@ -190,14 +190,14 @@ function diffSnapshots(before, after, opts) {
     strings.sort((a, b) => b.length - a.length);
     buffers.sort((a, b) => b.size - a.size);
 
-    // Classify the new strings with the shared secrets scanner — anything the
+    // Classify the new strings with the shared secrets scanner - anything the
     // page decoded into key/JWT/credential shape gets surfaced first.
     let secrets = [];
     try {
         const { scanForSecrets } = require('../util/secrets');
         const body = strings.join('\n');
         secrets = scanForSecrets(body, 'heap-diff');
-    } catch (e) { /* scanner unavailable — strings are still reported */ }
+    } catch (e) { /* scanner unavailable - strings are still reported */ }
 
     const topObjects = Object.entries(constructors)
         .sort((a, b) => b[1] - a[1])
@@ -220,7 +220,7 @@ function diffSnapshots(before, after, opts) {
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-// Take one snapshot: collect addHeapSnapshotChunk events, then poll-parse —
+// Take one snapshot: collect addHeapSnapshotChunk events, then poll-parse -
 // the reply lands before the dispatcher has drained every chunk, and the
 // blob is complete exactly when it parses as JSON.
 function takeSnapshot(cdpSession, timeoutMs) {
@@ -304,7 +304,7 @@ function writeReport(diff, targetLabel, afterSeconds) {
     console.log(`${C.dim}  new strings: ${t.distinct_new_strings} (user-retained) | new objects: ${t.new_objects} | new buffers: ${t.new_buffers}${C.reset}`);
 
     if (diff.secrets.length) {
-        console.log(`${C.hlred}  🔑 ${diff.secrets.length} secret-shaped value(s) among them — see [🔑 SECRET] lines / JSONL${C.reset}`);
+        console.log(`${C.hlred}  🔑 ${diff.secrets.length} secret-shaped value(s) among them - see [🔑 SECRET] lines / JSONL${C.reset}`);
     }
     const shown = diff.new_strings.slice(0, 25);
     if (shown.length) {

@@ -5,6 +5,7 @@ const { attachScriptScanner } = require('./scripts');
 const { recordCryptoCall, armCryptoBreakpoints, cleanupContexts } = require('./crypto');
 const { handleStructuredEvent, handleLegacyConsoleText } = require('./events');
 const { createHookState, armHooks, cleanupHookContexts, handleHookPause } = require('./hooks');
+const { createVMState, armVMWatchers, handleVMPause } = require('./vm');
 
 const BINDING_NAME = '__wci';
 
@@ -12,6 +13,7 @@ async function attachToSession(cdpSession, targetLabel, opts) {
     const options = opts || {};
     const bpMap = {};
     const hookState = createHookState(options.hooks);
+    const vmState = createVMState(options.traceVM);
 
     // ---- structured event transport -------------------------------------
     // Runtime.addBinding exposes a global function `__wci(payload)` inside
@@ -41,7 +43,6 @@ async function attachToSession(cdpSession, targetLabel, opts) {
             for (const arg of params.args || []) {
                 const text = typeof arg.value === 'string' ? arg.value : (arg.description || '');
                 if (!text.includes('[Reversed-Event]')) continue;
-                if (isDuplicateLegacy(text)) continue;
                 const wasm = handleLegacyConsoleText(text, targetLabel);
                 if (wasm) {
                     const { dumpWasmFromHex } = require('./events');
@@ -70,6 +71,9 @@ async function attachToSession(cdpSession, targetLabel, opts) {
         try {
             await armHooks(cdpSession, hookState, targetLabel, contextId);
         } catch (e) {}
+        try {
+            await armVMWatchers(cdpSession, vmState, targetLabel);
+        } catch (e) {}
     });
     cdpSession.on('Runtime.executionContextDestroyed', async (params) => {
         try { await cleanupContexts(cdpSession, [params.executionContextId], bpMap); } catch (e) {}
@@ -84,12 +88,19 @@ async function attachToSession(cdpSession, targetLabel, opts) {
     await attachNetworkCapture(cdpSession);
     await attachScriptScanner(cdpSession);
 
+    // Initial attempt to arm VM breakpoints if scripts are already parsed
+    try { await armVMWatchers(cdpSession, vmState, targetLabel); } catch (e) {}
+
     cdpSession.on('Debugger.paused', async (params) => {
         const hitBps = params.hitBreakpoints || [];
         let handled = false;
         if (hitBps.some(b => hookState.callBp.has(b) || hookState.retBp.has(b))) {
             try { handled = await handleHookPause(cdpSession, params, hookState, targetLabel); }
             catch (e) { console.warn(`${C.red}Hook record error:${C.reset}`, e.message); }
+        }
+        if (!handled && hitBps.some(b => vmState.bpMap.has(b))) {
+            try { handled = await handleVMPause(cdpSession, params, vmState, targetLabel); }
+            catch (e) { console.warn(`${C.red}VM watch error:${C.reset}`, e.message); }
         }
         if (!handled && hitBps.some(b => bpMap[b])) {
             try { await recordCryptoCall(cdpSession, params, bpMap, targetLabel); }
@@ -99,18 +110,4 @@ async function attachToSession(cdpSession, targetLabel, opts) {
     });
 }
 
-// Legacy console lines have no uid — dedupe on the raw text within a short
-// window (puppeteer + Runtime.consoleAPICalled can both surface a call).
-const recentLegacy = new Map();
-const LEGACY_TTL_MS = 2000;
-function isDuplicateLegacy(text) {
-    const now = Date.now();
-    for (const [k, t] of recentLegacy) {
-        if (now - t > LEGACY_TTL_MS) recentLegacy.delete(k);
-    }
-    if (recentLegacy.has(text)) return true;
-    recentLegacy.set(text, now);
-    return false;
-}
-
-module.exports = { attachToSession, BINDING_NAME };
+module.exports = { attachToSession };

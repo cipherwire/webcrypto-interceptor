@@ -207,6 +207,10 @@ node capture_server.js <URL> [options]
 | `--all-traffic` | Boolean | `false` | Disable analytics and tracker noise filtering to capture all requests. |
 | `--hook <expr>` | String | `[]` | Arm function call breakpoint. Repeatable option. |
 | `--hook-return <expr>` | String | `[]` | Arm function call and return breakpoints for input/output logging. Repeatable. |
+| `--trace-flow <expr>` | String | `[]` | Arm return breakpoint and trace downstream consumer variable and frame. Repeatable. |
+| `--dump-strings <expr>` | String | `null` | Drive page's runtime string decoder across index ranges to dump rotated string tables. |
+| `--trace-vm <loc>` | String | `[]` | Trace a bytecode VM dispatch loop at script location `<urlRegex:line[:column]>`. |
+| `--watch <exprs>` | String | `null` | Comma-separated expressions to evaluate on VM loop hit (`pc,op,stack[sp]`). |
 | `--heap-diff <sec>` | Integer | `0` | Capture two heap snapshots separated by N seconds to report retained allocations. |
 | `--help` | Boolean | `false` | Display command help and exit. |
 
@@ -230,6 +234,21 @@ node capture_server.js "https://target.local" --proxy "http://127.0.0.1:8080" --
 #### Hook a Function and Capture Return Values
 ```bash
 node capture_server.js "https://target.local" --hook-return "window.signPayload"
+```
+
+#### Follow Forward Dataflow from Producer to Consumer
+```bash
+node capture_server.js "https://target.local" --trace-flow "window.signPayload"
+```
+
+#### Dump Runtime-Rotated Obfuscated Strings
+```bash
+node capture_server.js "https://target.local" --dump-strings "_0x1a2b"
+```
+
+#### Trace Bytecode VM Dispatch Loop
+```bash
+node capture_server.js "https://target.local" --trace-vm "engine.js:142" --watch "pc,opcode,stack[sp]"
 ```
 
 #### Run Heap Allocation Diffing After Navigation
@@ -371,6 +390,9 @@ Terminal output uses structured tags to categorize observed events:
 | `[🕷️ CRYPTO HOOK]` | Debugger | Native V8 breakpoints armed on a target context. |
 | `[🪝 HOOK]` | Hooks | Function hooked via `--hook` executed (arguments and stack logged). |
 | `[🪝 HOOK PAIR]` | Hooks | Function hooked via `--hook-return` finished (input and output recorded). |
+| `[🌊 DATAFLOW]` | Dataflow | Hooked function returned and linked downstream to caller and variable. |
+| `[🪢 STRING UNPACKER]` | Deob | Runtime string decoder executed across index ranges to extract tables. |
+| `[🧬 VM WATCH]` | VM | Bytecode interpreter dispatch loop hit with evaluated register states. |
 | `[🧠 HEAP DIFF]` | Memory | Summary of heap allocations between snapshots. |
 
 ---
@@ -386,7 +408,7 @@ npm test
 ```
 
 The test runner executes all unit tests and automatically detects whether a local browser binary is available:
-- **Unit Tests (86 tests)**: Exercise pure logic modules (decoders, secret scanner, URL sanitization, CLI parsing, event deserialization) in approximately 250 milliseconds with zero external dependencies.
+- **Unit Tests (95 tests)**: Exercise pure logic modules (decoders, secret scanner, URL sanitization, CLI parsing, event deserialization, string table extraction, dataflow resolution, and VM state tracking) in approximately 250 milliseconds with zero external dependencies.
 - **Browser E2E Test (`tests/e2e.test.js`)**: When Chrome or Brave is detected, launches headless Chrome, initializes a secure context, and confirms WebCrypto AES-GCM interception.
 
 ### Skip Browser E2E Tests

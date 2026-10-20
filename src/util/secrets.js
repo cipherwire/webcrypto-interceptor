@@ -4,7 +4,7 @@
 // patterns (rsaPublicKey: "...", secretKey='...', etc.), fixed-length hex keys,
 // and JWTs.
 //
-// Dedup is global per-process — the same secret value is only reported once.
+// Dedup is global per-process - the same secret value is only reported once.
 
 const { C } = require('./colors');
 const { writeLog } = require('./log');
@@ -50,11 +50,11 @@ function scanForSecrets(body, sourceUrl) {
         findings.push({ type: `PEM_${m[1]}_KEY`, value: m[0].replace(/\\n/g, '\n') });
     }
 
-    // 2. Bare-base64 DER keys inside strings — no PEM wrapper.
+    // 2. Bare-base64 DER keys inside strings - no PEM wrapper.
     // RSA SPKI (public) starts with `MIIBIj...`, longer variants `MII[E-Z]...`.
     // RSA PKCS#8 (private) starts with `MIIEv...` / `MIIJKAI...`.
     // EC public keys (P-256/P-384 SPKI, ~91-120 bytes -> ~124-170 b64 chars)
-    // start with `MFkw` / `MHY` — they never start with MII, so they need
+    // start with `MFkw` / `MHY` - they never start with MII, so they need
     // their own branch or the DER_EC_PUBLIC_KEY classification is dead code.
     const derRe = /['"`]((?:MII[A-Za-z0-9+/]{160,4000}|MFkw[A-Za-z0-9+/]{80,4000}|MHY[A-Za-z0-9+/]{100,4000})={0,3})['"`]/g;
     while ((m = derRe.exec(body)) !== null) {

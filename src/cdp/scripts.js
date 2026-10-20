@@ -4,7 +4,7 @@
 // including:
 //   - external <script src="..."> resources (also seen by Network domain)
 //   - inline <script>...</script> blocks in HTML (typically NOT surfaced as
-//     separate network responses — this is where Nuxt puts window.__NUXT__)
+//     separate network responses - this is where Nuxt puts window.__NUXT__)
 //   - eval() strings
 //   - new Function(source) constructions
 //   - Webpack-runtime-generated chunks and dynamic imports
@@ -36,7 +36,7 @@ function noteScanned(key) {
 // Skip obviously-uninteresting sources: chrome internals, extensions, empty
 // generated wrappers.
 function shouldSkipUrl(url) {
-    if (!url) return false; // inline/eval scripts have empty url — we DO want those
+    if (!url) return false; // inline/eval scripts have empty url - we DO want those
     if (url.startsWith('chrome://')) return true;
     if (url.startsWith('chrome-extension://')) return true;
     if (url.startsWith('devtools://')) return true;
@@ -49,7 +49,7 @@ async function attachScriptScanner(cdpSession) {
 
     cdpSession.on('Debugger.scriptParsed', async (params) => {
         const { scriptId, url, hash, length } = params;
-        // Skip very small (<200 char) scripts — unlikely to embed useful keys.
+        // Skip very small (<200 char) scripts - unlikely to embed useful keys.
         if (typeof length === 'number' && length < 200) return;
         if (shouldSkipUrl(url)) return;
 

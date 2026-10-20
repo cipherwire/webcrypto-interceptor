@@ -68,8 +68,10 @@ const { resolveBrowserPath } = require('./src/util/browser');
     if (opts.brave) console.log(`🦁 BROWSER: Brave (${browserPath})`);
     if (opts.proxy) console.log(`🛰️  PROXY: ${opts.proxy}`);
     if (opts.allTraffic) console.log(`🎧 FILTER: disabled (--all-traffic)`);
-    const hookCount = opts.hooks.length + opts.hookReturns.length;
-    if (hookCount) console.log(`🪝 HOOKS: ${hookCount} (${opts.hookReturns.length} with return capture)`);
+    const hookCount = opts.hooks.length + opts.hookReturns.length + opts.traceFlows.length;
+    if (hookCount) console.log(`🪝 HOOKS: ${hookCount} (${opts.hookReturns.length} return pairs, ${opts.traceFlows.length} flow traces)`);
+    if (opts.dumpStrings) console.log(`🪢 STRING UNPACK: probing ${opts.dumpStrings}`);
+    if (opts.traceVM.length) console.log(`🧬 VM WATCH: ${opts.traceVM.length} loop locations`);
     if (opts.heapDiff > 0) console.log(`🧠 HEAP DIFF: ${opts.heapDiff}s after load`);
     if (extractDir) {
         console.log(`📦 FULL EXTRACT: ${extractDir}`);
@@ -167,8 +169,12 @@ const { resolveBrowserPath } = require('./src/util/browser');
     const mainClient = await page.target().createCDPSession();
     await applyUaOverride(mainClient);
     try { await mainClient.send('Page.setBypassCSP', { enabled: true }); } catch (e) {}
-    const hookSpecs = [...opts.hooks, ...opts.hookReturns];
-    await attachToSession(mainClient, `main:${shortUrl(targetUrl)}`, { getExtractDir, hooks: hookSpecs });
+    const hookSpecs = [...opts.hooks, ...opts.hookReturns, ...opts.traceFlows];
+    await attachToSession(mainClient, `main:${shortUrl(targetUrl)}`, {
+        getExtractDir,
+        hooks: hookSpecs,
+        traceVM: opts.traceVM
+    });
 
     // ---- multi-target attach: iframes, OOPIFs, workers ----------------------
     // Workers (dedicated/shared/service) never see evaluateOnNewDocument and
@@ -205,7 +211,11 @@ const { resolveBrowserPath } = require('./src/util/browser');
                 await childSession.send('Page.addScriptToEvaluateOnNewDocument', { source: hookCode }).catch(() => {});
             }
             await applyUaOverride(childSession);
-            await attachToSession(childSession, `${type}:${shortUrl(url)}`, { getExtractDir, hooks: hookSpecs });
+            await attachToSession(childSession, `${type}:${shortUrl(url)}`, {
+                getExtractDir,
+                hooks: hookSpecs,
+                traceVM: opts.traceVM
+            });
         } catch (e) {}
     }
     browser.on('targetcreated', tryAttachTarget);
@@ -241,6 +251,21 @@ const { resolveBrowserPath } = require('./src/util/browser');
         }
     }
     console.log(`\n${C.bold}🌟 STREAMING (Ctrl+C to stop). Interact with the page to trigger events. Watch for [🔓 CRYPTO BOUNDARY], [🌐 NET], [🪝 HOOK] and [💾 STORAGE STATE].${C.reset}\n`);
+
+    // ---- string unpacker (after load) --------------------------------------
+    if (opts.dumpStrings) {
+        const { unpackStrings } = require('./src/cdp/strings');
+        console.log(`${C.magenta}[🪢 STRING UNPACKER]${C.reset} Probing decoder ${C.bold}${opts.dumpStrings}${C.reset}...`);
+        try {
+            const res = await unpackStrings(mainClient, opts.dumpStrings);
+            console.log(`${C.green}[🪢 STRINGS RECOVERED]${C.reset} Recovered ${res.count} strings across ${res.probed} probed indices.`);
+            const stringsFile = path.join(opts.out || process.cwd(), `strings_${Date.now()}.json`);
+            fs.writeFileSync(stringsFile, JSON.stringify(res.decoded, null, 2), 'utf8');
+            console.log(`${C.dim}Saved string dictionary to: ${stringsFile}${C.reset}\n`);
+        } catch (e) {
+            console.warn(`${C.yellow}[🪢 STRING UNPACKER ERROR]${C.reset} ${e.message}`);
+        }
+    }
 
     // ---- heap diff (after load, non-blocking) -------------------------------
     if (opts.heapDiff > 0) {

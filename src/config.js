@@ -16,7 +16,7 @@ const SKIP_RESP_CT = /^(image|font|video|audio)\/|text\/css|application\/(font|o
 
 // --hook recording caps: JSONL records kept per hooked function (memory guard
 // for hot functions), plus the console print throttle (first N calls printed
-// individually, then every Nth — the JSONL log stays complete up to the cap).
+// individually, then every Nth - the JSONL log stays complete up to the cap).
 const HOOK_MAX_RECORDS = 5000;
 const HOOK_PRINT_FIRST = 20;
 const HOOK_PRINT_EVERY = 100;

@@ -157,7 +157,7 @@ function renderSummary(targetUrl, sessionLogFile) {
     const total = Object.values(state.counts).reduce((a, b) => a + b, 0);
     const mins = ((Date.now() - state.startedAt) / 60000).toFixed(1);
     const lines = [];
-    lines.push(`# webcrypto-interceptor — session summary`);
+    lines.push(`# webcrypto-interceptor - session summary`);
     lines.push('');
     lines.push(`- **Target:** ${targetUrl}`);
     lines.push(`- **Duration:** ${mins} min`);

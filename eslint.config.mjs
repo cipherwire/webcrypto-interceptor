@@ -1,4 +1,4 @@
-// ESLint flat config — pragmatic rules for a Node.js CDP tool that also
+// ESLint flat config - pragmatic rules for a Node.js CDP tool that also
 // ships browser-injected code (stealth.js uses var/arguments patterns
 // deliberately for maximum scope compatibility).
 export default [
@@ -6,7 +6,7 @@ export default [
         ignores: ['node_modules/', 'extracted_*/', '*_extracted_*/', 'wasm_modules/', 'dist/', 'coverage/']
     },
     {
-        // CommonJS language options apply to the tool's .js sources only —
+        // CommonJS language options apply to the tool's .js sources only -
         // scoping them here keeps this .mjs config file itself lintable as ESM.
         files: ['**/*.js'],
         languageOptions: {

@@ -12,7 +12,7 @@ async function recordCryptoCall(cdpSession, params, bpMap, targetLabel) {
 
     // The top frame is our page-side wrapper in stealth.js (functionName equals
     // one of the SUBTLE_METHODS). Skip it so the reported caller is the site's
-    // real call site. Only skip ONE wrapper level — a site function that is
+    // real call site. Only skip ONE wrapper level - a site function that is
     // itself legitimately named "encrypt"/"decrypt" must not be skipped too.
     const wrapperNames = new Set(SUBTLE_METHODS);
     let skip = 0;
@@ -63,7 +63,7 @@ async function recordCryptoCall(cdpSession, params, bpMap, targetLabel) {
 //
 // Keyed WeakMap(session) -> Map(contextId -> record): executionContextIds are
 // only unique WITHIN one CDP session, so a module-level Map(contextId) made
-// two concurrently attached targets with the same context id collide — the
+// two concurrently attached targets with the same context id collide - the
 // second target's context was skipped as "already armed" and captured nothing.
 const sessionArmed = new WeakMap();
 

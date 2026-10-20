@@ -55,14 +55,39 @@ test('--help short-circuits', () => {
     assert.ok(HELP.includes('webcrypto-interceptor'));
 });
 
-test('parses repeatable --hook and --hook-return', () => {
-    const o = parseArgv(['https://example.com', '--hook', 'window.a', '--hook', 'window.b', '--hook-return', 'window.sign']);
+test('parses repeatable --hook, --hook-return, and --trace-flow', () => {
+    const o = parseArgv([
+        'https://example.com',
+        '--hook', 'window.a',
+        '--hook', 'window.b',
+        '--hook-return', 'window.sign',
+        '--trace-flow', 'window.buildPayload'
+    ]);
     assert.deepEqual(o.hooks, [
-        { expr: 'window.a', captureReturn: false },
-        { expr: 'window.b', captureReturn: false }
+        { expr: 'window.a', captureReturn: false, traceFlow: false },
+        { expr: 'window.b', captureReturn: false, traceFlow: false }
     ]);
     assert.deepEqual(o.hookReturns, [
-        { expr: 'window.sign', captureReturn: true }
+        { expr: 'window.sign', captureReturn: true, traceFlow: false }
+    ]);
+    assert.deepEqual(o.traceFlows, [
+        { expr: 'window.buildPayload', captureReturn: true, traceFlow: true }
+    ]);
+});
+
+test('parses --dump-strings decoder expression', () => {
+    const o = parseArgv(['https://example.com', '--dump-strings', '_0x1a2b']);
+    assert.equal(o.dumpStrings, '_0x1a2b');
+});
+
+test('parses --trace-vm and --watch expressions', () => {
+    const o = parseArgv([
+        'https://example.com',
+        '--trace-vm', 'engine.js:142:4',
+        '--watch', 'pc, opcode, stack[sp]'
+    ]);
+    assert.deepEqual(o.traceVM, [
+        { locStr: 'engine.js:142:4', watch: ['pc', 'opcode', 'stack[sp]'] }
     ]);
 });
 
@@ -75,17 +100,19 @@ test('defaults: no hooks, heap diff disabled', () => {
     const o = parseArgv(['https://example.com']);
     assert.deepEqual(o.hooks, []);
     assert.deepEqual(o.hookReturns, []);
+    assert.deepEqual(o.traceFlows, []);
+    assert.equal(o.dumpStrings, null);
+    assert.deepEqual(o.traceVM, []);
     assert.equal(o.heapDiff, 0);
 });
 
 test('rejects empty hook expression', () => {
     assert.throws(() => parseArgv(['https://example.com', '--hook', '   ']), /must not be empty/);
     assert.throws(() => parseArgv(['https://example.com', '--hook-return', '']), /must not be empty/);
+    assert.throws(() => parseArgv(['https://example.com', '--trace-flow', '']), /must not be empty/);
 });
 
 test('rejects invalid heap-diff', () => {
-    // A negative number must use the '=' form; the space form ('--heap-diff -5')
-    // is rejected earlier by parseArgs as an ambiguous argument.
     assert.throws(() => parseArgv(['https://example.com', '--heap-diff=-5']), /non-negative/);
     assert.throws(() => parseArgv(['https://example.com', '--heap-diff', 'abc']), /non-negative/);
 });

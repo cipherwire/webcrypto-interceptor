@@ -1,4 +1,4 @@
-// Tests for src/cdp/heapdiff.js — the pure snapshot parser + differ.
+// Tests for src/cdp/heapdiff.js - the pure snapshot parser + differ.
 // Synthetic V8 heap snapshots are built to the real format contract: flat
 // node/edge int arrays, string table, meta-driven field layout, to_node as a
 // BYTE offset into the nodes array.

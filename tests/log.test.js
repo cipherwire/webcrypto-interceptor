@@ -68,7 +68,7 @@ test('printSummary writes markdown summary report next to log file', () => {
     const reportFile = path.join(sessionDir, 'session_capture_12345_summary.md');
     assert.ok(fs.existsSync(reportFile));
     const content = fs.readFileSync(reportFile, 'utf8');
-    assert.ok(content.includes('# webcrypto-interceptor — session summary'));
+    assert.ok(content.includes('# webcrypto-interceptor - session summary'));
     assert.ok(content.includes('https://example.com'));
     assert.ok(content.includes('crypto_subtle'));
 });

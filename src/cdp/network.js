@@ -20,7 +20,7 @@ function alreadySeen(url, status) {
     return false;
 }
 
-// HLS/DRM keys are almost always served as application/octet-stream — the
+// HLS/DRM keys are almost always served as application/octet-stream - the
 // content-type skip must never swallow them, or the RAW-AES-KEY detector
 // below never sees the most common key delivery path. Same for manifests
 // (m3u8/mpd), which some servers mislabel as generic streams.
@@ -46,7 +46,7 @@ async function attachNetworkCapture(cdpSession) {
     try { await cdpSession.send('Network.enable'); } catch (e) { return; }
 
     // CDP only guarantees a response body is fetchable once
-    // Network.loadingFinished fires for that requestId — calling
+    // Network.loadingFinished fires for that requestId - calling
     // getResponseBody from responseReceived races the buffer and silently
     // drops bodies (worst offender: the main document, first response of
     // every page). Stash response metadata here and do all body-dependent

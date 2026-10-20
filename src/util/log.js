@@ -100,7 +100,7 @@ function getTerminalFile() {
 }
 
 // Flush and close the stream. MUST be awaited before process.exit on
-// shutdown — writeStream.end() inside the 'exit' handler cannot flush
+// shutdown - writeStream.end() inside the 'exit' handler cannot flush
 // pending async writes, which silently dropped the tail of the capture.
 function closeLog() {
     return new Promise((resolve) => {
