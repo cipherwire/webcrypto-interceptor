@@ -36,14 +36,14 @@ test('startTerminalCapture tees stdout and stderr into terminal_output.txt witho
     assert.equal(termFile, path.join(captureDir, 'terminal_output.txt'));
 
     // Write to stdout and stderr with ANSI escape colors
-    process.stdout.write('\x1b[36m[🌐 NET]\x1b[0m GET https://example.com/api\n');
+    process.stdout.write('\x1b[36m[🌐 NET]\x1b[0m GET https://webcryptotest.hainahola.store/api\n');
     process.stderr.write('\x1b[31m[⚠️ WARN]\x1b[0m Warning message\n');
 
     await log.stopTerminalCapture();
 
     assert.ok(fs.existsSync(termFile));
     const content = fs.readFileSync(termFile, 'utf8');
-    assert.ok(content.includes('[🌐 NET] GET https://example.com/api\n'));
+    assert.ok(content.includes('[🌐 NET] GET https://webcryptotest.hainahola.store/api\n'));
     assert.ok(content.includes('[⚠️ WARN] Warning message\n'));
     assert.ok(!content.includes('\x1b['), 'must not contain ANSI escape codes');
 });
@@ -62,14 +62,14 @@ test('printSummary writes markdown summary report next to log file', () => {
     fs.mkdirSync(sessionDir, { recursive: true });
     const logFile = path.join(sessionDir, 'session_capture_12345.jsonl');
 
-    trackEvent('crypto_subtle', 'https://example.com/test');
-    printSummary('https://example.com', logFile);
+    trackEvent('crypto_subtle', 'https://webcryptotest.hainahola.store/test');
+    printSummary('https://webcryptotest.hainahola.store', logFile);
 
     const reportFile = path.join(sessionDir, 'session_capture_12345_summary.md');
     assert.ok(fs.existsSync(reportFile));
     const content = fs.readFileSync(reportFile, 'utf8');
     assert.ok(content.includes('# webcrypto-interceptor - session summary'));
-    assert.ok(content.includes('https://example.com'));
+    assert.ok(content.includes('https://webcryptotest.hainahola.store'));
     assert.ok(content.includes('crypto_subtle'));
 });
 
@@ -77,25 +77,25 @@ test('writeExtractedSummary generates structured extracted_summary.json with cry
     const extractDir = path.join(tmpDir, 'extract_summary_dir');
     fs.mkdirSync(extractDir, { recursive: true });
 
-    trackContentKey({ field: 'ck', decoded: '0123456789abcdef', url: 'https://example.com/player' });
-    trackRawAesKey({ bits: 128, hex: 'deadbeefdeadbeefdeadbeefdeadbeef', url: 'https://example.com/key.bin' });
-    trackHlsKey({ keyUri: 'https://example.com/stream.key', iv: '0x1234', url: 'https://example.com/master.m3u8' });
-    trackSecretFinding({ type: 'JWT', value: 'eyJ...', url: 'https://example.com/bundle.js' });
-    trackManifest({ type: 'hls_manifest', url: 'https://example.com/master.m3u8' });
+    trackContentKey({ field: 'ck', decoded: '0123456789abcdef', url: 'https://webcryptotest.hainahola.store/player' });
+    trackRawAesKey({ bits: 128, hex: 'deadbeefdeadbeefdeadbeefdeadbeef', url: 'https://webcryptotest.hainahola.store/key.bin' });
+    trackHlsKey({ keyUri: 'https://webcryptotest.hainahola.store/stream.key', iv: '0x1234', url: 'https://webcryptotest.hainahola.store/master.m3u8' });
+    trackSecretFinding({ type: 'JWT', value: 'eyJ...', url: 'https://webcryptotest.hainahola.store/bundle.js' });
+    trackManifest({ type: 'hls_manifest', url: 'https://webcryptotest.hainahola.store/master.m3u8' });
     trackWasmDump({ file: 'wasm/module_abc.wasm', hash: 'abc', size: 1024 });
     trackExtractedFile(path.join(extractDir, 'index.html'));
     trackExtractedFile(path.join(extractDir, 'bundle.js'));
 
-    const summaryPath = writeExtractedSummary(extractDir, 'https://example.com');
+    const summaryPath = writeExtractedSummary(extractDir, 'https://webcryptotest.hainahola.store');
     assert.ok(fs.existsSync(summaryPath));
     const data = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
 
-    assert.equal(data.target, 'https://example.com');
+    assert.equal(data.target, 'https://webcryptotest.hainahola.store');
     assert.equal(data.crypto.contentKeys[0].decoded, '0123456789abcdef');
     assert.equal(data.crypto.rawAesKeys[0].hex, 'deadbeefdeadbeefdeadbeefdeadbeef');
-    assert.equal(data.crypto.hlsKeys[0].keyUri, 'https://example.com/stream.key');
+    assert.equal(data.crypto.hlsKeys[0].keyUri, 'https://webcryptotest.hainahola.store/stream.key');
     assert.equal(data.secrets[0].type, 'JWT');
-    assert.equal(data.manifests[0].url, 'https://example.com/master.m3u8');
+    assert.equal(data.manifests[0].url, 'https://webcryptotest.hainahola.store/master.m3u8');
     assert.equal(data.wasmModules[0].hash, 'abc');
     assert.equal(data.files.total, 2);
     assert.equal(data.files.byExtension['.html'], 1);

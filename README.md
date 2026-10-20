@@ -352,7 +352,7 @@ node scripts/extract-keys.js session_capture_1730000000.jsonl
 
 #### Example Output:
 ```text
-url:  https://media.example.local/stream/segment_001.ts
+url:  https://webcryptotest.hainahola.store/stream/segment_0.ts
 algo: AES-CBC
 key:  0123456789abcdef0123456789abcdef
 iv:   fedcba9876543210fedcba9876543210

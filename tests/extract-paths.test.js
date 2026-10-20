@@ -108,7 +108,7 @@ test('cleanSourcePath strips prefixes, queries and blocks traversal', () => {
 });
 
 test('unpackSourcemap restores original source files to disk', () => {
-    extract.setExtractDir('https://example.com', tmpDir);
+    extract.setExtractDir('https://webcryptotest.hainahola.store', tmpDir);
     const mapData = {
         version: 3,
         sources: ['webpack:///src/auth.ts', 'webpack:///src/config.json'],
@@ -117,38 +117,38 @@ test('unpackSourcemap restores original source files to disk', () => {
             '{"env": "production"}'
         ]
     };
-    const count = extract.unpackSourcemap(mapData, 'https://example.com/assets/app.js', extract.getExtractDir());
+    const count = extract.unpackSourcemap(mapData, 'https://webcryptotest.hainahola.store/assets/app.js', extract.getExtractDir());
     assert.equal(count, 2);
 
-    const authFile = path.join(extract.getExtractDir(), '_sources', 'example.com', 'src', 'auth.ts');
+    const authFile = path.join(extract.getExtractDir(), '_sources', 'webcryptotest.hainahola.store', 'src', 'auth.ts');
     assert.ok(fs.existsSync(authFile));
     assert.equal(fs.readFileSync(authFile, 'utf8'), 'export function getAuthToken() { return "secret"; }');
 
-    const configFile = path.join(extract.getExtractDir(), '_sources', 'example.com', 'src', 'config.json');
+    const configFile = path.join(extract.getExtractDir(), '_sources', 'webcryptotest.hainahola.store', 'src', 'config.json');
     assert.ok(fs.existsSync(configFile));
     assert.equal(fs.readFileSync(configFile, 'utf8'), '{"env": "production"}');
 });
 
 test('isMediaSegment identifies media chunks while protecting manifests and keys', () => {
-    assert.equal(isMediaSegment('https://example.com/chunk_0.ts', 'video/mp2t'), true);
-    assert.equal(isMediaSegment('https://example.com/segment.m4s', 'video/iso.segment'), true);
-    assert.equal(isMediaSegment('https://example.com/stream.mp4', 'video/mp4'), true);
+    assert.equal(isMediaSegment('https://webcryptotest.hainahola.store/chunk_0.ts', 'video/mp2t'), true);
+    assert.equal(isMediaSegment('https://webcryptotest.hainahola.store/segment.m4s', 'video/iso.segment'), true);
+    assert.equal(isMediaSegment('https://webcryptotest.hainahola.store/stream.mp4', 'video/mp4'), true);
 
     // Manifests and keys must NEVER be classified as media segments
-    assert.equal(isMediaSegment('https://example.com/playlist.m3u8', 'application/vnd.apple.mpegurl'), false);
-    assert.equal(isMediaSegment('https://example.com/manifest.mpd', 'application/dash+xml'), false);
-    assert.equal(isMediaSegment('https://example.com/enc.key', 'application/octet-stream'), false);
-    assert.equal(isMediaSegment('https://example.com/api/key?id=1', 'application/octet-stream'), false);
+    assert.equal(isMediaSegment('https://webcryptotest.hainahola.store/playlist.m3u8', 'application/vnd.apple.mpegurl'), false);
+    assert.equal(isMediaSegment('https://webcryptotest.hainahola.store/manifest.mpd', 'application/dash+xml'), false);
+    assert.equal(isMediaSegment('https://webcryptotest.hainahola.store/enc.key', 'application/octet-stream'), false);
+    assert.equal(isMediaSegment('https://webcryptotest.hainahola.store/api/key?id=1', 'application/octet-stream'), false);
 });
 
 test('saveFile creates .unpacked companion for Dean Edwards packed scripts', () => {
     extract.resetExtractState();
-    extract.setExtractDir('https://example.com', tmpDir);
+    extract.setExtractDir('https://webcryptotest.hainahola.store', tmpDir);
     const packed = "eval(function(p,a,c,k,e,d){return p}('0 1=\"2\";',10,3,'var|myKey|secretVal'.split('|'),0,{}))";
-    extract.saveFile('https://example.com/js/player.js', packed);
+    extract.saveFile('https://webcryptotest.hainahola.store/js/player.js', packed);
 
-    const origPath = path.join(extract.getExtractDir(), 'example.com', 'js', 'player.js');
-    const unpackedPath = path.join(extract.getExtractDir(), 'example.com', 'js', 'player.unpacked.js');
+    const origPath = path.join(extract.getExtractDir(), 'webcryptotest.hainahola.store', 'js', 'player.js');
+    const unpackedPath = path.join(extract.getExtractDir(), 'webcryptotest.hainahola.store', 'js', 'player.unpacked.js');
 
     assert.ok(fs.existsSync(origPath), 'original packed file must exist');
     assert.ok(fs.existsSync(unpackedPath), 'unpacked companion file must exist');
@@ -158,9 +158,9 @@ test('saveFile creates .unpacked companion for Dean Edwards packed scripts', () 
 
 test('saveFile skips binary media chunk URLs (.ts, .m4s) to avoid bloat', () => {
     extract.resetExtractState();
-    extract.setExtractDir('https://example.com', tmpDir);
-    extract.saveFile('https://example.com/hls/segment_001.ts', Buffer.from('fake-video-bytes'));
-    const chunkPath = path.join(extract.getExtractDir(), 'example.com', 'hls', 'segment_001.ts');
+    extract.setExtractDir('https://webcryptotest.hainahola.store', tmpDir);
+    extract.saveFile('https://webcryptotest.hainahola.store/hls/segment_001.ts', Buffer.from('fake-video-bytes'));
+    const chunkPath = path.join(extract.getExtractDir(), 'webcryptotest.hainahola.store', 'hls', 'segment_001.ts');
     assert.equal(fs.existsSync(chunkPath), false, 'media chunk must be skipped');
 });
 

@@ -9,12 +9,12 @@ test('resolveConsumer: resolves consumer function and location from frames', asy
         {
             functionName: 'signPayload',
             location: { lineNumber: 20, columnNumber: 5 },
-            url: 'https://example.com/app.js'
+            url: 'https://webcryptotest.hainahola.store/app.js'
         },
         {
             functionName: 'sendRequest',
             location: { lineNumber: 42, columnNumber: 12 },
-            url: 'https://example.com/api.js',
+            url: 'https://webcryptotest.hainahola.store/api.js',
             callFrameId: 'frame-1',
             scopeChain: [
                 {

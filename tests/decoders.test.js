@@ -6,7 +6,7 @@ const {
 } = require('../src/util/decoders');
 
 test('shortUrl strips protocol and truncates', () => {
-    const long = 'https://example.com/a/very/long/path/that/exceeds/fifty/characters/for/sure';
+    const long = 'https://webcryptotest.hainahola.store/a/very/long/path/that/exceeds/fifty/characters/for/sure';
     assert.equal(shortUrl(long), long.replace(/^https?:\/\//, '').substring(0, 50));
     assert.equal(shortUrl('http://a.io/x'), 'a.io/x');
     assert.equal(shortUrl(null), '');
@@ -63,15 +63,15 @@ test('extractContentKey returns null when no key field', () => {
 });
 
 test('extractHlsKeyUri extracts URI and optional IV', () => {
-    const body = '#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="https://cdn.example.com/key.bin",IV=0x9c7db8778570d05c3177c349fd9236aa\n#EXTINF:10,\nseg1.ts';
+    const body = '#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="https://cdn.webcryptotest.hainahola.store/key.bin",IV=0x9c7db8778570d05c3177c349fd9236aa\n#EXTINF:10,\nseg1.ts';
     const hls = extractHlsKeyUri(body);
     assert.ok(hls);
-    assert.equal(hls.keyUri, 'https://cdn.example.com/key.bin');
+    assert.equal(hls.keyUri, 'https://cdn.webcryptotest.hainahola.store/key.bin');
     assert.equal(hls.iv, '0x9c7db8778570d05c3177c349fd9236aa');
 });
 
 test('extractHlsKeyUri handles missing IV', () => {
-    const body = '#EXT-X-KEY:METHOD=AES-128,URI="https://cdn.example.com/k"\n';
+    const body = '#EXT-X-KEY:METHOD=AES-128,URI="https://cdn.webcryptotest.hainahola.store/k"\n';
     const hls = extractHlsKeyUri(body);
     assert.ok(hls);
     assert.equal(hls.iv, null);

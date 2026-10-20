@@ -43,15 +43,15 @@ test('reassembleChunks reassembles ordered hex chunks', () => {
 test('structuredToLegacy preserves the [Reversed-Event] wire format', () => {
     const t = events.structuredToLegacy({
         type: 'fetch',
-        data: { method: 'POST', url: 'https://api.example.com/pay', video: false, body: 'a=1' }
+        data: { method: 'POST', url: 'https://api.webcryptotest.hainahola.store/pay', video: false, body: 'a=1' }
     });
-    assert.equal(t, '[Reversed-Event] fetch [POST] https://api.example.com/pay body: a=1');
+    assert.equal(t, '[Reversed-Event] fetch [POST] https://api.webcryptotest.hainahola.store/pay body: a=1');
 
     const v = events.structuredToLegacy({
         type: 'fetch',
-        data: { method: 'GET', url: 'https://cdn.example.com/v/index.m3u8', video: true, body: null }
+        data: { method: 'GET', url: 'https://cdn.webcryptotest.hainahola.store/v/index.m3u8', video: true, body: null }
     });
-    assert.equal(v, '[Reversed-Event] VIDEO [GET] https://cdn.example.com/v/index.m3u8');
+    assert.equal(v, '[Reversed-Event] VIDEO [GET] https://cdn.webcryptotest.hainahola.store/v/index.m3u8');
 
     const s = events.structuredToLegacy({
         type: 'storage',

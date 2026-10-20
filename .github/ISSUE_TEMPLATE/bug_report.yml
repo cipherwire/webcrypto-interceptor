@@ -12,7 +12,7 @@ body:
     attributes:
       label: What happened?
       description: Describe the bug - expected behavior vs. actual behavior.
-      placeholder: "`crypto.subtle` decrypt calls on example.com are tagged [🌐 NETWORK] instead of [🔐 CRYPTO]..."
+      placeholder: "`crypto.subtle` decrypt calls on webcryptotest.hainahola.store are tagged [🌐 NETWORK] instead of [🔐 CRYPTO]..."
     validations:
       required: true
 
@@ -22,7 +22,7 @@ body:
       label: Steps to reproduce
       description: The exact command you ran, plus any console output.
       placeholder: |
-        node capture_server.js --gui https://example.com
+        node capture_server.js --gui https://webcryptotest.hainahola.store
         (paste relevant terminal output here)
     validations:
       required: true

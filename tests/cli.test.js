@@ -3,8 +3,8 @@ const assert = require('node:assert/strict');
 const { parseArgv, HELP } = require('../src/cli');
 
 test('parses basic URL', () => {
-    const o = parseArgv(['https://example.com']);
-    assert.equal(o.url, 'https://example.com');
+    const o = parseArgv(['https://webcryptotest.hainahola.store']);
+    assert.equal(o.url, 'https://webcryptotest.hainahola.store');
     assert.equal(o.gui, false);
     assert.equal(o.brave, false);
     assert.equal(o.full, false);
@@ -13,12 +13,12 @@ test('parses basic URL', () => {
 });
 
 test('parses --brave flag', () => {
-    const o = parseArgv(['https://example.com', '--brave']);
+    const o = parseArgv(['https://webcryptotest.hainahola.store', '--brave']);
     assert.equal(o.brave, true);
 });
 
 test('parses flags and values', () => {
-    const o = parseArgv(['https://example.com', '--gui', '--full', '--out', '/tmp/dumps', '--timeout', '90', '--all-traffic']);
+    const o = parseArgv(['https://webcryptotest.hainahola.store', '--gui', '--full', '--out', '/tmp/dumps', '--timeout', '90', '--all-traffic']);
     assert.equal(o.gui, true);
     assert.equal(o.full, true);
     assert.equal(o.out, '/tmp/dumps');
@@ -38,13 +38,13 @@ test('rejects missing URL', () => {
 });
 
 test('rejects non-http URL', () => {
-    assert.throws(() => parseArgv(['ftp://example.com']), /http/);
-    assert.throws(() => parseArgv(['example.com']), /http/);
+    assert.throws(() => parseArgv(['ftp://webcryptotest.hainahola.store']), /http/);
+    assert.throws(() => parseArgv(['webcryptotest.hainahola.store']), /http/);
 });
 
 test('rejects invalid timeout', () => {
-    assert.throws(() => parseArgv(['https://example.com', '--timeout', '-5']), /timeout/);
-    assert.throws(() => parseArgv(['https://example.com', '--timeout', 'abc']), /timeout/);
+    assert.throws(() => parseArgv(['https://webcryptotest.hainahola.store', '--timeout', '-5']), /timeout/);
+    assert.throws(() => parseArgv(['https://webcryptotest.hainahola.store', '--timeout', 'abc']), /timeout/);
 });
 
 test('--help short-circuits', () => {
@@ -57,7 +57,7 @@ test('--help short-circuits', () => {
 
 test('parses repeatable --hook, --hook-return, and --trace-flow', () => {
     const o = parseArgv([
-        'https://example.com',
+        'https://webcryptotest.hainahola.store',
         '--hook', 'window.a',
         '--hook', 'window.b',
         '--hook-return', 'window.sign',
@@ -76,13 +76,13 @@ test('parses repeatable --hook, --hook-return, and --trace-flow', () => {
 });
 
 test('parses --dump-strings decoder expression', () => {
-    const o = parseArgv(['https://example.com', '--dump-strings', '_0x1a2b']);
+    const o = parseArgv(['https://webcryptotest.hainahola.store', '--dump-strings', '_0x1a2b']);
     assert.equal(o.dumpStrings, '_0x1a2b');
 });
 
 test('parses --trace-vm and --watch expressions', () => {
     const o = parseArgv([
-        'https://example.com',
+        'https://webcryptotest.hainahola.store',
         '--trace-vm', 'engine.js:142:4',
         '--watch', 'pc, opcode, stack[sp]'
     ]);
@@ -92,12 +92,12 @@ test('parses --trace-vm and --watch expressions', () => {
 });
 
 test('parses --heap-diff seconds', () => {
-    const o = parseArgv(['https://example.com', '--heap-diff', '30']);
+    const o = parseArgv(['https://webcryptotest.hainahola.store', '--heap-diff', '30']);
     assert.equal(o.heapDiff, 30);
 });
 
 test('defaults: no hooks, heap diff disabled', () => {
-    const o = parseArgv(['https://example.com']);
+    const o = parseArgv(['https://webcryptotest.hainahola.store']);
     assert.deepEqual(o.hooks, []);
     assert.deepEqual(o.hookReturns, []);
     assert.deepEqual(o.traceFlows, []);
@@ -107,14 +107,14 @@ test('defaults: no hooks, heap diff disabled', () => {
 });
 
 test('rejects empty hook expression', () => {
-    assert.throws(() => parseArgv(['https://example.com', '--hook', '   ']), /must not be empty/);
-    assert.throws(() => parseArgv(['https://example.com', '--hook-return', '']), /must not be empty/);
-    assert.throws(() => parseArgv(['https://example.com', '--trace-flow', '']), /must not be empty/);
+    assert.throws(() => parseArgv(['https://webcryptotest.hainahola.store', '--hook', '   ']), /must not be empty/);
+    assert.throws(() => parseArgv(['https://webcryptotest.hainahola.store', '--hook-return', '']), /must not be empty/);
+    assert.throws(() => parseArgv(['https://webcryptotest.hainahola.store', '--trace-flow', '']), /must not be empty/);
 });
 
 test('rejects invalid heap-diff', () => {
-    assert.throws(() => parseArgv(['https://example.com', '--heap-diff=-5']), /non-negative/);
-    assert.throws(() => parseArgv(['https://example.com', '--heap-diff', 'abc']), /non-negative/);
+    assert.throws(() => parseArgv(['https://webcryptotest.hainahola.store', '--heap-diff=-5']), /non-negative/);
+    assert.throws(() => parseArgv(['https://webcryptotest.hainahola.store', '--heap-diff', 'abc']), /non-negative/);
 });
 
 test('C.hlyel is defined and valid ANSI code', () => {

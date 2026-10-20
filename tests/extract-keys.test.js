@@ -10,7 +10,7 @@ const TS = '2026-01-01T00:00:00.000Z';
 
 test('correlates importKey(raw) + decrypt with the last video URL', () => {
     const lines = [
-        line('hook_event', '[Reversed-Event] fetch [GET] https://cdn.example.com/video/index.m3u8', TS),
+        line('hook_event', '[Reversed-Event] fetch [GET] https://cdn.webcryptotest.hainahola.store/video/index.m3u8', TS),
         line('hook_event', '[Reversed-Event] CRYPTO-ARGS importKey ' + JSON.stringify([
             'raw', { __t: 'Bytes', len: 16, hex: '00112233445566778899aabbccddeeff' },
             { name: 'AES-CBC' }, false, ['decrypt']
@@ -22,7 +22,7 @@ test('correlates importKey(raw) + decrypt with the last video URL', () => {
     ];
     const results = extractKeys(lines);
     assert.equal(results.length, 1);
-    assert.equal(results[0].url, 'https://cdn.example.com/video/index.m3u8');
+    assert.equal(results[0].url, 'https://cdn.webcryptotest.hainahola.store/video/index.m3u8');
     assert.equal(results[0].keyHex, '00112233445566778899aabbccddeeff');
     assert.equal(results[0].ivHex, '9c7db8778570d05c3177c349fd9236aa');
     assert.equal(results[0].algorithm, 'AES-CBC');
