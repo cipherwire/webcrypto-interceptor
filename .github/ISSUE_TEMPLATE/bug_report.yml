@@ -11,7 +11,7 @@ body:
     id: what-happened
     attributes:
       label: What happened?
-      description: Describe the bug — expected behavior vs. actual behavior.
+      description: Describe the bug - expected behavior vs. actual behavior.
       placeholder: "`crypto.subtle` decrypt calls on example.com are tagged [🌐 NETWORK] instead of [🔐 CRYPTO]..."
     validations:
       required: true

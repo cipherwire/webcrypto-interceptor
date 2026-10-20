@@ -1,0 +1,119 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v0.4.0)'
+        required: true
+        default: 'v0.4.0'
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  verify:
+    name: Verify Quality Gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit test suite
+        run: npm test
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Check dependency security audit
+        run: npm audit --audit-level=high
+
+      - name: Check syntax on all source modules
+        run: |
+          node --check capture_server.js
+          node --check src/cdp/session.js
+          node --check src/cdp/events.js
+          node --check src/cdp/strings.js
+          node --check src/cdp/dataflow.js
+          node --check src/cdp/vm.js
+          node --check scripts/unpack-strings.js
+          node --check scripts/extract-keys.js
+          node --check scripts/verify-reimpl.js
+
+  publish:
+    name: Build & Publish Release
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Resolve release tag
+        id: vars
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Create release archives
+        run: |
+          mkdir -p dist
+          PKG_NAME="webcrypto-interceptor-${{ steps.vars.outputs.tag }}"
+          
+          mkdir -p "dist/${PKG_NAME}"
+          cp -r capture_server.js src scripts package.json package-lock.json README.md LICENSE "dist/${PKG_NAME}/"
+          
+          cd dist
+          tar -czf "${PKG_NAME}.tar.gz" "${PKG_NAME}"
+          zip -rq "${PKG_NAME}.zip" "${PKG_NAME}"
+          rm -rf "${PKG_NAME}"
+          
+          sha256sum "${PKG_NAME}.tar.gz" "${PKG_NAME}.zip" > checksums.txt
+          cd ..
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.vars.outputs.tag }}
+          name: "webcrypto-interceptor ${{ steps.vars.outputs.tag }}"
+          generate_release_notes: true
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/checksums.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to NPM Registry
+        if: env.NPM_TOKEN != ''
+        run: |
+          npm ci
+          npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Notice on missing NPM token
+        if: env.NPM_TOKEN == ''
+        run: |
+          echo "Notice: NPM_TOKEN secret is not configured in repository settings. GitHub Release was created successfully, npm registry publish was skipped."
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
