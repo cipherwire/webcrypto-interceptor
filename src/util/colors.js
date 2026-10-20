@@ -1,7 +1,8 @@
 const C = {
     reset: '\x1b[0m', dim: '\x1b[90m', red: '\x1b[31m', green: '\x1b[32m',
     yellow: '\x1b[33m', blue: '\x1b[34m', magenta: '\x1b[35m', cyan: '\x1b[36m',
-    bold: '\x1b[1m', hlred: '\x1b[41m\x1b[97m', hlgrn: '\x1b[42m\x1b[97m'
+    bold: '\x1b[1m', hlred: '\x1b[41m\x1b[97m', hlgrn: '\x1b[42m\x1b[97m',
+    hlyel: '\x1b[43m\x1b[30m'
 };
 
 module.exports = { C };

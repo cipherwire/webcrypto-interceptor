@@ -1,4 +1,4 @@
-// Page-side hooks — injected via evaluateOnNewDocument (pages/iframes) or
+// Page-side hooks - injected via evaluateOnNewDocument (pages/iframes) or
 // Runtime.evaluate (worker targets). Scope-agnostic: uses globalThis so it
 // runs identically in window and worker scopes.
 //
@@ -29,6 +29,8 @@
     var uidCounter = 0;
     var uidBase = Math.random().toString(36).slice(2, 10) + '-';
     var CHUNK_SIZE = 200000; // stay well under any binding payload limits
+    var byteToHex = [];
+    for (var bi = 0; bi < 256; bi++) byteToHex[bi] = (bi < 16 ? '0' : '') + bi.toString(16);
 
     function newUid() { return uidBase + (++uidCounter); }
 
@@ -159,6 +161,7 @@
         Object.defineProperty(FunctionProxy, 'prototype', { value: OrigFunction.prototype });
         W.Function = FunctionProxy;
         originalFunctions.set(FunctionProxy, OrigFunction);
+        try { OrigFunction.prototype.constructor = FunctionProxy; } catch (e) {}
     } catch (e) {}
 
     try {
@@ -288,10 +291,10 @@
         } catch (e) {}
 
         // The site may also construct sockets via the captured original
-        // reference before our proxy was installed — patch the prototype's
+        // reference before our proxy was installed - patch the prototype's
         // constructor trap once more via a marker so direct `new WebSocket`
         // on the ORIGINAL still gets a receiver (best effort).
-        var attachWsRecv = function (instance) {
+        function attachWsRecv(instance) {
             instance.addEventListener('message', function (evt) {
                 try {
                     if (!isInterestingUrl(instance.url)) return;
@@ -322,8 +325,12 @@
                 emit('wasm', { method: method, bytes: len, hash: hash });
                 if (len < 5000000) {
                     var hex = '';
-                    for (var i = 0; i < arr.length; i++) {
-                        hex += (arr[i] < 16 ? '0' : '') + arr[i].toString(16);
+                    var CHUNK = 8192;
+                    for (var i = 0; i < arr.length; i += CHUNK) {
+                        var end = Math.min(i + CHUNK, arr.length);
+                        var parts = [];
+                        for (var j = i; j < end; j++) parts.push(byteToHex[arr[j]]);
+                        hex += parts.join('');
                     }
                     emitWasmHex(hash, hex);
                 }
@@ -458,7 +465,7 @@
         });
     }
     // ---------------- crypto.getRandomValues ----------------
-    // crypto.subtle argument capture — page-side wrapper. Complements the CDP
+    // crypto.subtle argument capture - page-side wrapper. Complements the CDP
     // breakpoint (which pauses at the caller frame and sometimes can't see args
     // that live in a Promise microtask closure). This wrapper runs at call time
     // so it always sees the real arguments.
@@ -475,7 +482,7 @@
                         if (shouldLogRandom()) {
                             var hex = '';
                             var limit = Math.min(array.length, 64);
-                            for (var i = 0; i < limit; i++) hex += (array[i] < 16 ? '0' : '') + array[i].toString(16);
+                            for (var i = 0; i < limit; i++) hex += byteToHex[array[i]];
                             emit('random', {
                                 t: array.constructor && array.constructor.name,
                                 len: array.length, hex: hex,
@@ -496,7 +503,7 @@
             function bytesToObj(u, name) {
                 var hex = '', utf8 = '';
                 var limit = Math.min(u.length, 512);
-                for (var i = 0; i < limit; i++) hex += (u[i] < 16 ? '0' : '') + u[i].toString(16);
+                for (var i = 0; i < limit; i++) hex += byteToHex[u[i]];
                 var out = { __t: name || 'Bytes', len: u.length, hex: hex };
                 try { utf8 = new TextDecoder('utf-8', { fatal: false }).decode(u.subarray(0, 512)); } catch (e) {}
                 // Only include utf8 if it looks like real text: no U+FFFD
@@ -582,7 +589,7 @@
         }
     } catch (e) {}
     // ---------------- pure-JS crypto libraries ----------------
-    // CryptoJS / JSEncrypt / sjcl hooks — for sites that don't use Web Crypto.
+    // CryptoJS / JSEncrypt / sjcl hooks - for sites that don't use Web Crypto.
     // Poller runs for ~15s to catch libs loaded lazily after our stealth
     // script. Uses the same stealth pattern (originalFunctions map so
     // Function.prototype.toString still returns the native source).

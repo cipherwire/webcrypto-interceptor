@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// verify-reimpl.js — the verification oracle.
+// verify-reimpl.js - the verification oracle.
 //
 // Reading obfuscated JS gives you a hypothesis, not a fact. This script checks
 // the hypothesis: it loads (input -> output) pairs captured by
 //   node capture_server.js <url> --hook-return "window.sign"
 // from a session JSONL, then runs YOUR reimplementation of the function in an
-// isolated headless Chrome page (about:blank — it cannot see the target, its
+// isolated headless Chrome page (about:blank - it cannot see the target, its
 // closures, or its network) against the whole corpus, and prints a structured
 // diff with concrete counterexamples.
 //
@@ -17,7 +17,7 @@
 //
 // Candidate contract: a JS file with `module.exports = function (...args) {...}`
 // (sync or promise-returning). Extra smoke inputs (NOT counted in the
-// verdict): --input '<json-args-array>' — repeatable.
+// verdict): --input '<json-args-array>' - repeatable.
 //
 // Exit codes: 0 verified | 1 mismatches | 2 usage/no corpus | 3 runtime error.
 'use strict';
@@ -46,7 +46,7 @@ function extractPairs(jsonlContent, label) {
 }
 
 // Strict deep equality: type-sensitive (bool !== 1, '2' !== 2), order-aware
-// for arrays, key-set-aware for objects. Own implementation — the comparisons
+// for arrays, key-set-aware for objects. Own implementation - the comparisons
 // decide whether a reimplementation ships, so no coercing shortcuts.
 function deepEqual(a, b) {
     if (a === b) return true;
@@ -75,7 +75,7 @@ function deepEqual(a, b) {
 // ---- CLI -------------------------------------------------------------------
 
 function usage(code) {
-    console.log(`verify-reimpl.js — check a reimplementation against captured ground truth
+    console.log(`verify-reimpl.js - check a reimplementation against captured ground truth
 
 Usage:
   node scripts/verify-reimpl.js --session <file.jsonl> --label <hook> --candidate <file.js>
@@ -86,7 +86,7 @@ Usage:
   --label <hook>         Hook label to verify, e.g. "window.buildPayload".
                          Required when the session has more than one hooked fn.
   --candidate <file>     JS file: module.exports = function (...args) { ... }
-                         Runs in an isolated about:blank page — no network, no
+                         Runs in an isolated about:blank page - no network, no
                          access to the target site or its closures.
   --brave                Run candidate evaluation in Brave browser
   --input <json>         Extra args array as a smoke test, e.g. '["zoe", 0]'.
@@ -191,7 +191,7 @@ async function main() {
 
         const runOne = async (input) => {
             const args = Array.isArray(input) ? input : [input];
-            const r = await page.evaluate(async (a) => {
+            return await page.evaluate(async (a) => {
                 try {
                     const v = await window.__candidate.apply(null, a);
                     return { ok: true, value: v === undefined ? null : v };
@@ -199,29 +199,27 @@ async function main() {
                     return { ok: false, error: String(e && e.message || e) };
                 }
             }, JSON.parse(JSON.stringify(args)));
-            if (!r.ok) return { error: r.error };
-            return r.value;
         };
 
-        // Smoke inputs — printed, not scored.
+        // Smoke inputs - printed, not scored.
         for (const raw of opts.inputs) {
             let parsed;
             try { parsed = JSON.parse(raw); } catch (e) { usageError(`--input is not valid JSON: ${raw}`); }
-            const got = await runOne(parsed);
-            console.log(`smoke ${JSON.stringify(parsed)} -> ${JSON.stringify(got)}`);
+            const r = await runOne(parsed);
+            console.log(`smoke ${JSON.stringify(parsed)} -> ${JSON.stringify(r.ok ? r.value : { error: r.error })}`);
         }
 
         // Verdict over the corpus
         let matched = 0;
         const mismatches = [];
         for (const p of pairs) {
-            const got = await runOne(p.input);
+            const r = await runOne(p.input);
             const expected = p.output === undefined ? null : p.output;
-            if (!got || typeof got !== 'object' || !('error' in got)) {
-                if (deepEqual(expected, got)) { matched++; continue; }
+            if (r.ok) {
+                if (deepEqual(expected, r.value)) { matched++; continue; }
             }
             if (mismatches.length < opts.maxMismatches) {
-                mismatches.push({ input: p.input, expected, got });
+                mismatches.push({ input: p.input, expected, got: r.ok ? r.value : { error: r.error } });
             }
         }
 
@@ -234,7 +232,7 @@ async function main() {
             console.log(`  expected:  ${JSON.stringify(m.expected)}`);
             console.log(`  got:       ${JSON.stringify(m.got)}`);
         }
-        console.log(`\nverdict: ${verified ? 'VERIFIED — reimplementation matches the captured ground truth' : 'NOT VERIFIED — iterate until the diff is empty'}`);
+        console.log(`\nverdict: ${verified ? 'VERIFIED - reimplementation matches the captured ground truth' : 'NOT VERIFIED - iterate until the diff is empty'}`);
         process.exit(verified ? 0 : 1);
     } finally {
         try { await browser.close(); } catch (e) {}

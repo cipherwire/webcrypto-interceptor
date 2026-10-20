@@ -14,9 +14,9 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        node: [18, 20, 22]
+        node: [22, 24, 26]
     env:
-      # Tests exercise pure modules only — skip the ~150MB Chrome download
+      # Tests exercise pure modules and local E2E - skip the ~150MB Chrome download in CI
       PUPPETEER_SKIP_DOWNLOAD: 'true'
     steps:
       - uses: actions/checkout@v4
@@ -26,7 +26,10 @@ jobs:
           node-version: ${{ matrix.node }}
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
+
+      - name: Verify browser availability for E2E testing
+        run: node -e "const { resolveBrowserPath } = require('./src/util/browser'); const p = resolveBrowserPath(false) || resolveBrowserPath(true); if (!p) { console.error('Error: No compatible Chrome or Brave browser found on host for E2E integration test.'); process.exit(1); } console.log('Resolved browser for E2E testing:', p);"
 
       - name: Run tests
         run: npm test

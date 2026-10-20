@@ -33,6 +33,14 @@ test('urlToFilePath rejects non-http protocols', () => {
     assert.equal(extract.urlToFilePath('chrome://settings'), null);
 });
 
+test('urlToFilePath tolerates malformed percent-encoding in path', () => {
+    extract.setExtractDir('https://site.example', tmpDir);
+    assert.doesNotThrow(() => {
+        const p = extract.urlToFilePath('https://site.example/%E0%A4%A');
+        assert.ok(p && p.startsWith(tmpDir));
+    });
+});
+
 test('urlToFilePath blocks path traversal', () => {
     const p = extract.urlToFilePath('https://site.example/../../etc/passwd');
     assert.ok(p && p.startsWith(tmpDir), 'must stay inside extract dir');

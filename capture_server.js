@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// webcrypto-interceptor — stealth CDP-based reverse-engineering toolkit.
+// webcrypto-interceptor - stealth CDP-based reverse-engineering toolkit.
 // Entry point: launches Chrome, injects page hooks, attaches CDP capture
 // sessions to the page, its iframes and its workers, and streams tagged
 // events to the terminal + a JSONL session log.
@@ -158,8 +158,7 @@ const { resolveBrowserPath } = require('./src/util/browser');
                     // Strip the Headless marker from client hints too, or
                     // getHighEntropyValues('uaFullVersion') style probes still
                     // see a headless brand.
-                    userAgentMetadata: version.userAgent && version.userAgent.includes('HeadlessChrome') && !opts.ua
-                        ? undefined : undefined
+                    userAgentMetadata: undefined
                 });
             }
         } catch (e) {}
@@ -173,7 +172,7 @@ const { resolveBrowserPath } = require('./src/util/browser');
 
     // ---- multi-target attach: iframes, OOPIFs, workers ----------------------
     // Workers (dedicated/shared/service) never see evaluateOnNewDocument and
-    // their console output is not relayed by puppeteer — but they run plenty
+    // their console output is not relayed by puppeteer - but they run plenty
     // of crypto. We attach to their target, evaluate the hook source there
     // (stealth.js is globalThis-based, so it works), and rely on the __wci
     // binding channel for event transport.
@@ -217,7 +216,7 @@ const { resolveBrowserPath } = require('./src/util/browser');
 
     // ---- navigate ------------------------------------------------------------
     // (Legacy console fallback handling lives inside attachToSession via
-    // Runtime.consoleAPICalled — it covers the main page, iframes and workers
+    // Runtime.consoleAPICalled - it covers the main page, iframes and workers
     // from one place, so no separate page.on('console') relay is needed.)
     console.log(`${C.dim}Navigating to page...${C.reset}\n`);
     try {
@@ -227,7 +226,7 @@ const { resolveBrowserPath } = require('./src/util/browser');
         console.warn(`${C.yellow}⚠️  Navigation issue (page may still be usable):${C.reset} ${e.message}`);
     } finally {
         if (extractDir) {
-            // Post-render snapshot — the actual final DOM, not the pre-JS
+            // Post-render snapshot - the actual final DOM, not the pre-JS
             // shell that raw network capture saves for SPAs. Runs even when
             // navigation timed out: a "usable" page is exactly when this
             // snapshot matters most.

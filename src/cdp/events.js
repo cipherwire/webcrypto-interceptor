@@ -3,9 +3,9 @@
 // Events reach us through two channels:
 //   1. STRUCTURED (preferred): the page-side hook calls the `__wci` binding
 //      (installed via Runtime.addBinding) with a JSON envelope:
-//        { uid, type, data }            — normal event
-//        { uid, type: 'wasm_hex', seq, of, hex, hash } — chunked big payloads
-//   2. LEGACY (fallback): console.log lines tagged "[Reversed-Event] ..." —
+//        { uid, type, data }            - normal event
+//        { uid, type: 'wasm_hex', seq, of, hex, hash } - chunked big payloads
+//   2. LEGACY (fallback): console.log lines tagged "[Reversed-Event] ..." -
 //      parsed with the original string matching, used when a context has no
 //      binding (e.g. attached mid-flight) or the binding call throws.
 //
@@ -16,7 +16,7 @@ const fs = require('fs');
 const path = require('path');
 const { C } = require('../util/colors');
 const { writeLog } = require('../util/log');
-const { trackEvent, trackSecret, trackWasmDump } = require('../util/summary');
+const { trackEvent, trackWasmDump } = require('../util/summary');
 
 // Dedupe window for event uids (Set with FIFO cap).
 const seenUids = new Set();
@@ -26,7 +26,7 @@ function isDuplicate(uid) {
     if (seenUids.has(uid)) return true;
     seenUids.add(uid);
     if (seenUids.size > MAX_UIDS) {
-        // Sets keep insertion order — drop the oldest fifth.
+        // Sets keep insertion order - drop the oldest fifth.
         let drop = Math.floor(MAX_UIDS / 5);
         for (const v of seenUids) { seenUids.delete(v); if (--drop <= 0) break; }
     }
@@ -122,12 +122,13 @@ function structuredToLegacy(evt) {
 function dumpWasmFromHex(hash, hex, extractDirGetter) {
     try {
         const buf = Buffer.from(hex, 'hex');
-        const targetDir = extractDirGetter() ? path.join(extractDirGetter(), 'wasm') : path.join(process.cwd(), 'wasm_modules');
+        const extractDir = typeof extractDirGetter === 'function' ? extractDirGetter() : null;
+        const targetDir = extractDir ? path.join(extractDir, 'wasm') : path.join(process.cwd(), 'wasm_modules');
         fs.mkdirSync(targetDir, { recursive: true });
         const wasmPath = path.join(targetDir, `module_${hash}.wasm`);
         fs.writeFileSync(wasmPath, buf);
         trackWasmDump({
-            file: path.relative(extractDirGetter() || process.cwd(), wasmPath).replace(/\\/g, '/'),
+            file: path.relative(extractDir || process.cwd(), wasmPath).replace(/\\/g, '/'),
             hash,
             size: buf.length
         });
@@ -162,7 +163,7 @@ function handleStructuredEvent(rawJson, targetLabel, extractDirGetter) {
         try {
             const { scanForSecrets, reportSecrets } = require('../util/secrets');
             const findings = scanForSecrets(evt.data.snippet, evt.data.url || 'blob');
-            if (findings.length) { reportSecrets(findings, evt.data.url || 'blob'); trackSecret(); }
+            if (findings.length) { reportSecrets(findings, evt.data.url || 'blob'); }
         } catch (e) {}
     }
     return true;

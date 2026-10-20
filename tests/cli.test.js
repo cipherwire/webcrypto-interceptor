@@ -89,3 +89,9 @@ test('rejects invalid heap-diff', () => {
     assert.throws(() => parseArgv(['https://example.com', '--heap-diff=-5']), /non-negative/);
     assert.throws(() => parseArgv(['https://example.com', '--heap-diff', 'abc']), /non-negative/);
 });
+
+test('C.hlyel is defined and valid ANSI code', () => {
+    const { C } = require('../src/util/colors');
+    assert.equal(typeof C.hlyel, 'string');
+    assert.ok(C.hlyel.startsWith('\x1b['));
+});

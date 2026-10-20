@@ -1,5 +1,5 @@
 // --full mode: dump every script source and response body seen on the page
-// to disk, mirroring each URL's own path — a poor-man's "save whole site".
+// to disk, mirroring each URL's own path - a poor-man's "save whole site".
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -29,7 +29,7 @@ function getExtractDir() {
 // Returns null for anything that isn't a real fetched resource: puppeteer
 // synthetic URLs (pptr:, __puppeteer_evaluation_script__), webpack://,
 // blob:, data:, about: etc. Their "paths" are debugger sourceURLs / opaque
-// ids, not real site structure — decoding them (e.g. pptr:'s %2F-encoded
+// ids, not real site structure - decoding them (e.g. pptr:'s %2F-encoded
 // stack-frame paths) can otherwise forge arbitrary nested directories.
 function urlToFilePath(url) {
     if (!extractDir) return null;
@@ -37,7 +37,12 @@ function urlToFilePath(url) {
     try { u = new URL(url); } catch (e) { return null; }
     if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
 
-    let p = decodeURIComponent(u.pathname);
+    let p;
+    try {
+        p = decodeURIComponent(u.pathname);
+    } catch (e) {
+        p = u.pathname;
+    }
     if (p === '' || p.endsWith('/')) p += 'index.html';
     if (!path.extname(p)) p += '.html'; // extensionless SPA routes/API calls -> readable file
 
@@ -53,7 +58,7 @@ function urlToFilePath(url) {
     return path.join(extractDir, u.hostname, ...safeSegs);
 }
 
-// Minified bundles/responses come back as one giant line — pretty-print
+// Minified bundles/responses come back as one giant line - pretty-print
 // text formats so the saved files are actually readable. Skips Buffers
 // (binary content) and anything js-beautify/JSON.parse chokes on, falling
 // back to the raw text untouched rather than losing the capture.
@@ -76,10 +81,10 @@ function prettify(target, content) {
         }
         if (ext === '.json') return JSON.stringify(JSON.parse(content), null, 2);
         // Extensionless API responses land as .html (SPA-route convention)
-        // but are often JSON bodies — sniff and pretty-print those too,
+        // but are often JSON bodies - sniff and pretty-print those too,
         // before falling through to generic HTML beautify.
         if (ext === '.html' && /^\s*[{[]/.test(content)) return JSON.stringify(JSON.parse(content), null, 2);
-    } catch (e) { /* not valid/parseable — save as-is below */ }
+    } catch (e) { /* not valid/parseable - save as-is below */ }
     return content;
 }
 

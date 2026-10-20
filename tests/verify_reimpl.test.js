@@ -1,4 +1,4 @@
-// Tests for scripts/verify-reimpl.js — the pure corpus extraction and the
+// Tests for scripts/verify-reimpl.js - the pure corpus extraction and the
 // strict comparison logic that decides whether a reimplementation ships.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -57,4 +57,10 @@ test('deepEqual: objects are key-set-aware, key order irrelevant', () => {
 
 test('deepEqual: nested mismatch is caught', () => {
     assert.ok(!deepEqual({ r: { sig: 'aaa' } }, { r: { sig: 'aab' } }));
+});
+
+test('deepEqual: supports objects with error property without false positives', () => {
+    assert.ok(deepEqual({ error: 'invalid' }, { error: 'invalid' }));
+    assert.ok(!deepEqual({ error: 'invalid' }, { error: 'other' }));
+    assert.ok(deepEqual({ status: 400, error: null }, { status: 400, error: null }));
 });

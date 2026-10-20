@@ -3,15 +3,15 @@
   "version": "0.3.0",
   "description": "Stealth CDP-based reverse-engineering toolkit: capture crypto.subtle calls, network traffic, workers, WASM and embedded secrets from any website.",
   "license": "MIT",
-  "author": "Amit Haina",
+  "author": "cipherwire",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/AmitHaina/webcrypto-interceptor.git"
+    "url": "git+https://github.com/cipherwire/webcrypto-interceptor.git"
   },
   "bugs": {
-    "url": "https://github.com/AmitHaina/webcrypto-interceptor/issues"
+    "url": "https://github.com/cipherwire/webcrypto-interceptor/issues"
   },
-  "homepage": "https://github.com/AmitHaina/webcrypto-interceptor#readme",
+  "homepage": "https://github.com/cipherwire/webcrypto-interceptor#readme",
   "keywords": [
     "cdp",
     "chrome-devtools-protocol",
@@ -43,11 +43,11 @@
     "lint": "eslint ."
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.12.0"
   },
   "dependencies": {
     "js-beautify": "^2.0.3",
-    "puppeteer": "^24.43.1"
+    "puppeteer": "^25.14.0"
   },
   "devDependencies": {
     "eslint": "^9.0.0"

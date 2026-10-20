@@ -30,7 +30,7 @@ test('reassembleChunks reassembles ordered hex chunks', () => {
         { uid: 'c1#1', type: 'wasm_hex', seq: 1, of: 3, hash: 'abc', hex: 'bb' }
     ];
     // note: uid differs per chunk in the real transport; assembly keys on uid
-    // prefix logic — events.reassembleChunks keys on evt.uid, so simulate the
+    // prefix logic - events.reassembleChunks keys on evt.uid, so simulate the
     // node-side view where each chunk shares the same uid.
     const same = chunks.map((c, i) => ({ ...c, uid: 'c1' }));
     let out = null;
@@ -87,4 +87,16 @@ test('formatHookConsole keeps legacy tag rendering', () => {
     assert.ok(resOut.includes('CRYPTO RESULT'));
     const blob = events.formatHookConsole('[Reversed-Event] BLOB URL blob:x type=text/javascript size=10B');
     assert.ok(blob.includes('BLOB URL'));
+});
+
+test('dumpWasmFromHex works when extractDirGetter is omitted', () => {
+    assert.doesNotThrow(() => {
+        events.dumpWasmFromHex('deadbeef123', '0061736d01000000');
+    });
+    // Cleanup generated module in wasm_modules if created in cwd
+    try {
+        const p = path.join(process.cwd(), 'wasm_modules', 'module_deadbeef123.wasm');
+        if (fs.existsSync(p)) fs.unlinkSync(p);
+        fs.rmdirSync(path.join(process.cwd(), 'wasm_modules'));
+    } catch (e) {}
 });
