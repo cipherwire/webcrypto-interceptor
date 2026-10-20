@@ -168,7 +168,29 @@ export PUPPETEER_EXECUTABLE_PATH="/usr/bin/google-chrome"
 Launch the interceptor against an authorized local or remote target:
 
 ```bash
-node capture_server.js "http://127.0.0.1:8080/app" --gui
+node capture_server.js "https://webcryptotest.hainahola.store" --gui
+```
+
+### Live Target Sandbox
+
+An authentic production target sandbox is hosted 24/7 at **[https://webcryptotest.hainahola.store](https://webcryptotest.hainahola.store)** to test and verify every interception capability against real browser cryptography:
+- **WebCrypto Subtle AES-GCM-256**: Key derivation, 96-bit CSPRNG IVs, authenticated encryption.
+- **Asymmetric Envelope RSA-OAEP-2048**: Real SPKI and PKCS#8 PEM key exports, encrypted symmetric key envelopes.
+- **Identity Provider RFC 7519 JWT**: Valid JSON Web Tokens signed with HMAC-SHA256 (`HS256`).
+- **WebAssembly Kernel Acceleration**: Dynamic `.wasm` binary module instantiation and execution.
+- **Rotated String Tables**: In-memory shuffled array with live decoder `_0x4b12(idx)`.
+- **HLS DRM ClearKey Streams**: Valid `#EXT-X-KEY:METHOD=AES-128` playlists and encrypted MPEG-TS chunks.
+- **Bytecode Virtual Machine**: Real opcode interpreter loop with stack pointers and register states.
+
+```bash
+# Intercept live WebCrypto, JWT tokens, and HLS DRM streams
+node capture_server.js "https://webcryptotest.hainahola.store" --gui
+
+# Dump in-memory rotated string tables
+node capture_server.js "https://webcryptotest.hainahola.store" --dump-strings "_0x4b12"
+
+# Trace forward consumer dataflow from producer to consumer
+node capture_server.js "https://webcryptotest.hainahola.store" --trace-flow "generateSessionSignature"
 ```
 
 ### What Happens at Startup:
@@ -218,42 +240,42 @@ node capture_server.js <URL> [options]
 
 #### Run in Headful GUI Mode with Brave Browser
 ```bash
-node capture_server.js "https://target.local" --brave --gui
+node capture_server.js "https://webcryptotest.hainahola.store" --brave --gui
 ```
 
 #### Full Asset Extraction with Custom Output Directory
 ```bash
-node capture_server.js "https://target.local" --full --out ./captures --timeout 90
+node capture_server.js "https://webcryptotest.hainahola.store" --full --out ./captures --timeout 90
 ```
 
 #### Route Traffic Through an Upstream Security Proxy
 ```bash
-node capture_server.js "https://target.local" --proxy "http://127.0.0.1:8080" --gui
+node capture_server.js "https://webcryptotest.hainahola.store" --proxy "http://127.0.0.1:8080" --gui
 ```
 
 #### Hook a Function and Capture Return Values
 ```bash
-node capture_server.js "https://target.local" --hook-return "window.signPayload"
+node capture_server.js "https://webcryptotest.hainahola.store" --hook-return "window.runJwtSign"
 ```
 
 #### Follow Forward Dataflow from Producer to Consumer
 ```bash
-node capture_server.js "https://target.local" --trace-flow "window.signPayload"
+node capture_server.js "https://webcryptotest.hainahola.store" --trace-flow "generateSessionSignature"
 ```
 
 #### Dump Runtime-Rotated Obfuscated Strings
 ```bash
-node capture_server.js "https://target.local" --dump-strings "_0x1a2b"
+node capture_server.js "https://webcryptotest.hainahola.store" --dump-strings "_0x4b12"
 ```
 
 #### Trace Bytecode VM Dispatch Loop
 ```bash
-node capture_server.js "https://target.local" --trace-vm "engine.js:142" --watch "pc,opcode,stack[sp]"
+node capture_server.js "https://webcryptotest.hainahola.store" --trace-vm "lab.js:vmInterpreter" --watch "pc,op,stack[sp]"
 ```
 
 #### Run Heap Allocation Diffing After Navigation
 ```bash
-node capture_server.js "https://target.local" --heap-diff 15
+node capture_server.js "https://webcryptotest.hainahola.store" --heap-diff 15
 ```
 
 ---

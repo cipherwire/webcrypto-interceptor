@@ -90,12 +90,12 @@ const SIM_SCENARIOS = {
         { time: '00:00.205', tag: '[IPC RELAY]', color: 'term-dim', text: '__wci event envelope flushed to session_capture_1730000000.jsonl' }
     ],
     drm: [
-        { time: '00:01.012', tag: '[HLS MANIFEST]', color: 'term-blue', text: 'Fetched master playlist https://stream.target.local/stream.m3u8' },
-        { time: '00:01.025', tag: '[KEY DETECTED]', color: 'term-amber', text: '#EXT-X-KEY:METHOD=AES-128,URI="https://stream.target.local/keys/key_01.bin",IV=0x00000001' },
+        { time: '00:01.012', tag: '[HLS MANIFEST]', color: 'term-blue', text: 'Fetched master playlist https://webcryptotest.hainahola.store/stream/manifest.m3u8' },
+        { time: '00:01.025', tag: '[KEY DETECTED]', color: 'term-amber', text: '#EXT-X-KEY:METHOD=AES-128,URI="stream/enc.key",IV=0x53656372657449563030313132323333' },
         { time: '00:01.040', tag: '[WORKER SPAWN]', color: 'term-dim', text: 'Target.attachedToTarget dedicated worker (hls.worker.js)' },
-        { time: '00:01.082', tag: '[KEY IMPORTED]', color: 'term-green', text: 'crypto.subtle.importKey raw key=f3a19b88210344c8b291845199201a4e (16 bytes)' },
-        { time: '00:01.120', tag: '[CHUNK DECRYPT]', color: 'term-green', text: 'crypto.subtle.decrypt segment_001.ts (len=524,288 bytes) with key=f3a19b88...' },
-        { time: '00:01.135', tag: '[CORRELATION]', color: 'term-white', text: 'Correlated segment_001.ts with key=f3a19b88... iv=00000000000000000000000000000001' },
+        { time: '00:01.082', tag: '[KEY IMPORTED]', color: 'term-green', text: 'crypto.subtle.importKey raw key=41424344454630313233343536373839 (16 bytes)' },
+        { time: '00:01.120', tag: '[CHUNK DECRYPT]', color: 'term-green', text: 'crypto.subtle.decrypt segment_0.ts (len=1,888 bytes) with key=41424344...' },
+        { time: '00:01.135', tag: '[CORRELATION]', color: 'term-white', text: 'Correlated segment_0.ts with key=41424344... iv=53656372657449563030313132323333' },
         { time: '00:01.140', tag: '[DISK FILTER]', color: 'term-dim', text: 'Skipped raw 5MB MPEG-TS payload write to disk (--full media filter active)' }
     ],
     wasm: [
@@ -125,12 +125,12 @@ const SIM_SCENARIOS = {
         { time: '00:00.160', tag: '[DATAFLOW]', color: 'term-green', text: 'window.signPayload -> consumed by dispatchAuthHeader at api.js:84 (received by authToken)' }
     ],
     strings: [
-        { time: '00:00.210', tag: '[UNPACK INIT]', color: 'term-dim', text: 'Probing live string decoder _0x1a2b across index ranges' },
-        { time: '00:00.225', tag: '[DECODER HIT]', color: 'term-blue', text: 'Runtime.evaluate: _0x1a2b(0) -> "Authorization"' },
-        { time: '00:00.235', tag: '[DECODER HIT]', color: 'term-blue', text: 'Runtime.evaluate: _0x1a2b(1) -> "Bearer "' },
-        { time: '00:00.245', tag: '[DECODER HIT]', color: 'term-blue', text: 'Runtime.evaluate: _0x1a2b(2) -> "https://api.target.local/v2/auth"' },
-        { time: '00:00.260', tag: '[PROBE MISS]', color: 'term-amber', text: 'Runtime.evaluate: _0x1a2b(84..116) threw out-of-range exceptions' },
-        { time: '00:00.275', tag: '[STRINGS DUMPED]', color: 'term-green', text: 'Recovered 84 strings from runtime-rotated table into strings_1730000000.json' }
+        { time: '00:00.210', tag: '[UNPACK INIT]', color: 'term-dim', text: 'Probing live string decoder _0x4b12 across index ranges' },
+        { time: '00:00.225', tag: '[DECODER HIT]', color: 'term-blue', text: 'Runtime.evaluate: _0x4b12(0) -> "Bearer sec_k8s_cluster_8841a0e9124fb87ac339"' },
+        { time: '00:00.235', tag: '[DECODER HIT]', color: 'term-blue', text: 'Runtime.evaluate: _0x4b12(1) -> "AKIAIOSFODNN7REALEXMPL"' },
+        { time: '00:00.245', tag: '[DECODER HIT]', color: 'term-blue', text: 'Runtime.evaluate: _0x4b12(2) -> "arn:aws:kms:us-east-1:123456789012:key/b6f5d840..."' },
+        { time: '00:00.260', tag: '[PROBE MISS]', color: 'term-amber', text: 'Runtime.evaluate: _0x4b12(15..47) threw consecutive out-of-range exceptions' },
+        { time: '00:00.275', tag: '[STRINGS DUMPED]', color: 'term-green', text: 'Recovered 15 strings from runtime-rotated table into strings_1730000000.json' }
     ],
     vm: [
         { time: '00:00.310', tag: '[VM ARMED]', color: 'term-blue', text: 'Debugger.setBreakpointByUrl armed at vm_core.js:142' },

@@ -19,6 +19,7 @@
             <span class="brand-ver">v0.3.0</span>
         </div>
         <nav class="topbar-nav">
+            <a href="https://webcryptotest.hainahola.store" target="_blank" rel="noopener" style="color: #10b981; font-weight: 600;">Live Target Lab ↗</a>
             <a href="https://github.com/cipherwire/webcrypto-interceptor" target="_blank" rel="noopener">GitHub</a>
             <a href="https://github.com/cipherwire/webcrypto-interceptor/releases" target="_blank" rel="noopener">Releases</a>
             <a href="https://discord.gg/QphWRKHvH2" target="_blank" rel="noopener">Discord</a>
@@ -166,8 +167,8 @@ cd webcrypto-interceptor
 # Install dependencies (0 vulnerabilities verified by npm audit)
 npm install
 
-# Launch interactive inspection
-node capture_server.js "http://127.0.0.1:8080/app" --gui</code></pre>
+# Launch interactive inspection against 24/7 live target sandbox
+node capture_server.js "https://webcryptotest.hainahola.store" --gui</code></pre>
                 </div>
             </section>
 
@@ -556,7 +557,7 @@ cmd:  openssl enc -d -aes-128-cbc -K f3a19b88210344c8b291845199201a4e -iv 000000
                         <span>terminal</span>
                         <button class="code-copy-btn">copy</button>
                     </div>
-                    <pre><code>node capture_server.js "https://target.local" --hook-return "window.signPayload" --gui</code></pre>
+                    <pre><code>node capture_server.js "https://webcryptotest.hainahola.store" --hook-return "window.runJwtSign" --gui</code></pre>
                 </div>
 
                 <h2>2. Executing the Oracle</h2>

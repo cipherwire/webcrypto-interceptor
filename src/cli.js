@@ -46,14 +46,14 @@ Environment:
   PUPPETEER_EXECUTABLE_PATH   Path to a Chrome/Chromium binary (overrides auto-detection)
 
 Examples:
-  node capture_server.js "https://example.com" --gui
-  node capture_server.js "https://example.com" --brave --gui
-  node capture_server.js "https://example.com" --full --out ./dumps --timeout 90
-  node capture_server.js "https://example.com" --hook "window.sign" --hook-return "window.buildPayload"
-  node capture_server.js "https://example.com" --trace-flow "window.signPayload"
-  node capture_server.js "https://example.com" --dump-strings "_0x1a2b"
-  node capture_server.js "https://example.com" --heap-diff 30
-  npx webcrypto-interceptor "https://example.com" --gui
+  node capture_server.js "https://webcryptotest.hainahola.store" --gui
+  node capture_server.js "https://webcryptotest.hainahola.store" --brave --gui
+  node capture_server.js "https://webcryptotest.hainahola.store" --full --out ./dumps --timeout 90
+  node capture_server.js "https://webcryptotest.hainahola.store" --hook "window.runAesGcm" --hook-return "window.runJwtSign"
+  node capture_server.js "https://webcryptotest.hainahola.store" --trace-flow "generateSessionSignature"
+  node capture_server.js "https://webcryptotest.hainahola.store" --dump-strings "_0x4b12"
+  node capture_server.js "https://webcryptotest.hainahola.store" --heap-diff 30
+  npx webcrypto-interceptor "https://webcryptotest.hainahola.store" --gui
 `.trim();
 
 function usageError(message) {

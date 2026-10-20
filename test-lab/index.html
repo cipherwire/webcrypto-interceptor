@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CIPHERGATE // High-Assurance Cryptographic Verification Gateway</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Top Sticky Header -->
+  <header class="top-header">
+    <div class="brand-row">
+      <span class="brand-badge">CIPHERGATE KMS</span>
+      <h1 class="brand-title">Cryptographic Subsystem & Verification Target</h1>
+    </div>
+    <div class="meta-stats">
+      <div class="stat-item">
+        <span class="pulse-dot"></span>
+        <span>STATUS:</span>
+        <span class="stat-val" style="color: var(--accent-emerald);">OPERATIONAL</span>
+      </div>
+      <div class="stat-item">
+        <span>EVENTS:</span>
+        <span class="stat-val" id="eventCounter">0</span>
+      </div>
+      <div class="stat-item">
+        <span>SECURITY LEVEL:</span>
+        <span class="stat-val">FIPS 140-3 Level 1</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Control & Action Ribbon -->
+  <div class="action-banner">
+    <div class="banner-left">
+      <button class="btn btn-primary" onclick="window.runAllTargets()">Execute Verification Suite</button>
+      <span class="banner-desc">Triggers WebCrypto, RSA-OAEP, RFC 7519 JWT, WebAssembly kernel, and string table decoders.</span>
+    </div>
+    <div class="btn-group">
+      <button class="btn btn-emerald" onclick="window.runAesGcm()">AES-GCM-256</button>
+      <button class="btn btn-emerald" onclick="window.runRsaOaep()">RSA-OAEP-2048</button>
+      <button class="btn btn-emerald" onclick="window.runJwtSign()">Sign JWT</button>
+      <button class="btn btn-purple" onclick="window.runStringProbe()">Decode String Table</button>
+      <button class="btn btn-amber" onclick="window.runVM()">Step VM Loop</button>
+      <button class="btn btn-emerald" onclick="window.runDataflowFlow()">Emit Flow Token</button>
+      <button class="btn btn-red" onclick="window.runHeapLeak()">Retain Heap Secrets</button>
+      <button class="btn" onclick="window.clearConsole()">Clear Terminal</button>
+    </div>
+  </div>
+
+  <!-- Main Workstation Layout -->
+  <main class="main-container">
+    
+    <!-- Left: Target Testing Panels -->
+    <div class="lab-panels">
+
+      <!-- Panel 1: WebCrypto Subtle AES-GCM -->
+      <section class="panel-card">
+        <div class="panel-header">
+          <div class="panel-tag-group">
+            <span class="panel-id tag-cyan">SUBSYSTEM 01</span>
+            <h2 class="panel-title">Symmetric Vault Encryption (AES-GCM-256)</h2>
+          </div>
+          <button class="btn btn-emerald" onclick="window.runAesGcm()">Encrypt Payload</button>
+        </div>
+        <div class="panel-body">
+          <div class="param-grid">
+            <div class="param-block">
+              <div class="param-label">Active Key Material (256-bit CSPRNG Hex)</div>
+              <div class="param-value hex-box" id="gcmKeyHex">Pending execution...</div>
+            </div>
+            <div class="param-block">
+              <div class="param-label">Initialization Vector (96-bit crypto.getRandomValues)</div>
+              <div class="param-value hex-box" id="gcmIvHex">Pending execution...</div>
+            </div>
+          </div>
+          <div class="param-block">
+            <div class="param-label">Authenticated Ciphertext + GCM Tag (Hex)</div>
+            <div class="param-value" id="gcmCtHex">Pending execution...</div>
+          </div>
+          <div class="cli-hint">
+            <span>Interception Command:</span>
+            <code class="cli-code">node capture_server.js &lt;TARGET_URL&gt;</code>
+          </div>
+        </div>
+      </section>
+
+      <!-- Panel 2: WebCrypto Subtle RSA-OAEP 2048-bit -->
+      <section class="panel-card">
+        <div class="panel-header">
+          <div class="panel-tag-group">
+            <span class="panel-id tag-cyan">SUBSYSTEM 02</span>
+            <h2 class="panel-title">Asymmetric Envelope Encryption (RSA-OAEP-2048)</h2>
+          </div>
+          <button class="btn btn-emerald" onclick="window.runRsaOaep()">Generate & Encrypt</button>
+        </div>
+        <div class="panel-body">
+          <div class="param-grid">
+            <div class="param-block">
+              <div class="param-label">Public Key (SPKI Format)</div>
+              <div class="param-value hex-box" id="rsaPubPem" style="white-space: pre; font-size: 11px;">Pending execution...</div>
+            </div>
+            <div class="param-block">
+              <div class="param-label">Private Key (PKCS#8 Format)</div>
+              <div class="param-value hex-box" id="rsaPrivPem" style="white-space: pre; font-size: 11px;">Pending execution...</div>
+            </div>
+          </div>
+          <div class="param-block">
+            <div class="param-label">Encrypted 256-bit Key Envelope (2048-bit Ciphertext)</div>
+            <div class="param-value" id="rsaCtHex">Pending execution...</div>
+          </div>
+          <div class="cli-hint">
+            <span>Interception Command:</span>
+            <code class="cli-code">node capture_server.js &lt;TARGET_URL&gt;</code>
+          </div>
+        </div>
+      </section>
+
+      <!-- Panel 3: RFC 7519 JSON Web Token -->
+      <section class="panel-card">
+        <div class="panel-header">
+          <div class="panel-tag-group">
+            <span class="panel-id tag-cyan">SUBSYSTEM 03</span>
+            <h2 class="panel-title">OAuth 2.0 Identity Token (RFC 7519 HMAC-SHA256)</h2>
+          </div>
+          <button class="btn btn-emerald" onclick="window.runJwtSign()">Issue Token</button>
+        </div>
+        <div class="panel-body">
+          <div class="param-grid">
+            <div class="param-block">
+              <div class="param-label">HMAC Signing Key (256-bit Hex)</div>
+              <div class="param-value hex-box" id="jwtKeyHex">Pending execution...</div>
+            </div>
+            <div class="param-block">
+              <div class="param-label">Signature Alg</div>
+              <div class="param-value">HS256 (HMAC with SHA-256)</div>
+            </div>
+          </div>
+          <div class="param-block">
+            <div class="param-label">RFC 7519 Signed JWT String</div>
+            <div class="param-value" id="jwtTokenVal" style="color: var(--accent-emerald);">Pending execution...</div>
+          </div>
+          <div class="cli-hint">
+            <span>Automatic Secret Detection:</span>
+            <code class="cli-code">node capture_server.js &lt;TARGET_URL&gt;</code>
+          </div>
+        </div>
+      </section>
+
+      <!-- Panel 4: WebAssembly Cryptographic Kernel -->
+      <section class="panel-card">
+        <div class="panel-header">
+          <div class="panel-tag-group">
+            <span class="panel-id tag-amber">SUBSYSTEM 04</span>
+            <h2 class="panel-title">WebAssembly Acceleration Kernel (kernel.wasm)</h2>
+          </div>
+          <button class="btn btn-amber" onclick="window.runWasmModule()">Load Kernel</button>
+        </div>
+        <div class="panel-body">
+          <div class="param-block">
+            <div class="param-label">Wasm Module Execution Status</div>
+            <div class="param-value" id="wasmStatusVal" style="color: var(--accent-amber);">Pending execution...</div>
+          </div>
+          <div class="cli-hint">
+            <span>Automatic Wasm Binary Extraction:</span>
+            <code class="cli-code">node capture_server.js &lt;TARGET_URL&gt;</code>
+          </div>
+        </div>
+      </section>
+
+      <!-- Panel 5: Obfuscator.io Runtime-Rotated String Table -->
+      <section class="panel-card">
+        <div class="panel-header">
+          <div class="panel-tag-group">
+            <span class="panel-id tag-purple">SUBSYSTEM 05</span>
+            <h2 class="panel-title">In-Memory Rotated Secret Table (_0x4b12)</h2>
+          </div>
+          <button class="btn btn-purple" onclick="window.runStringProbe()">Probe Decoder</button>
+        </div>
+        <div class="panel-body">
+          <div class="param-block">
+            <div class="param-label">Active Decoded Values (Dynamically Unscrambled at Runtime)</div>
+            <div class="param-value" id="strDecoderVal" style="color: var(--accent-purple);">Pending execution...</div>
+          </div>
+          <div class="cli-hint">
+            <span>Ghostwire String Unpacker Command:</span>
+            <code class="cli-code">node capture_server.js &lt;TARGET_URL&gt; --dump-strings "_0x4b12"</code>
+          </div>
+        </div>
+      </section>
+
+      <!-- Panel 6: Stack-Based Bytecode VM Interpreter -->
+      <section class="panel-card">
+        <div class="panel-header">
+          <div class="panel-tag-group">
+            <span class="panel-id tag-amber">SUBSYSTEM 06</span>
+            <h2 class="panel-title">Virtual Machine Bytecode Dispatch Loop (vmInterpreter)</h2>
+          </div>
+          <button class="btn btn-amber" onclick="window.runVM()">Step VM</button>
+        </div>
+        <div class="panel-body">
+          <div class="param-block">
+            <div class="param-label">Virtual Machine State Output</div>
+            <div class="param-value" id="vmOutVal" style="color: var(--accent-amber);">Pending execution...</div>
+          </div>
+          <div class="cli-hint">
+            <span>Ghostwire Bytecode VM Watcher Command:</span>
+            <code class="cli-code">node capture_server.js &lt;TARGET_URL&gt; --trace-vm "lab.js:vmInterpreter" --watch "pc,op,stack[sp]"</code>
+          </div>
+        </div>
+      </section>
+
+      <!-- Panel 7: Forward Dataflow Return Tracer -->
+      <section class="panel-card">
+        <div class="panel-header">
+          <div class="panel-tag-group">
+            <span class="panel-id tag-emerald">SUBSYSTEM 07</span>
+            <h2 class="panel-title">Forward Dataflow Consumer Tracer</h2>
+          </div>
+          <button class="btn btn-emerald" onclick="window.runDataflowFlow()">Emit Token</button>
+        </div>
+        <div class="panel-body">
+          <div class="param-grid">
+            <div class="param-block">
+              <div class="param-label">Origin Producer: generateSessionSignature()</div>
+              <div class="param-value" id="dfToken" style="color: var(--accent-emerald);">Pending...</div>
+            </div>
+            <div class="param-block">
+              <div class="param-label">Target Consumer: consumeSessionAuthorization()</div>
+              <div class="param-value" id="dfConsumer">Pending...</div>
+            </div>
+          </div>
+          <div class="cli-hint">
+            <span>Ghostwire Forward Dataflow Command:</span>
+            <code class="cli-code">node capture_server.js &lt;TARGET_URL&gt; --trace-flow "generateSessionSignature"</code>
+          </div>
+        </div>
+      </section>
+
+      <!-- Panel 8: Dean Edwards Packed Script -->
+      <section class="panel-card">
+        <div class="panel-header">
+          <div class="panel-tag-group">
+            <span class="panel-id tag-red">SUBSYSTEM 08</span>
+            <h2 class="panel-title">Packed DRM Content Key Delivery (Dean Edwards)</h2>
+          </div>
+          <button class="btn btn-red" onclick="window.runPackedScript()">Execute Packed Code</button>
+        </div>
+        <div class="panel-body">
+          <div class="param-block">
+            <div class="param-label">Extracted Content Key (from eval(function(p,a,c,k,e,d)...))</div>
+            <div class="param-value hex-box" id="packedKeyVal">Pending...</div>
+          </div>
+          <div class="cli-hint">
+            <span>Auto Decompression & Key Recovery:</span>
+            <code class="cli-code">node capture_server.js &lt;TARGET_URL&gt; --extract</code>
+          </div>
+        </div>
+      </section>
+
+      <!-- Panel 9: HLS EXT-X-KEY Manifest -->
+      <section class="panel-card">
+        <div class="panel-header">
+          <div class="panel-tag-group">
+            <span class="panel-id tag-cyan">SUBSYSTEM 09</span>
+            <h2 class="panel-title">HLS DRM ClearKey Stream Delivery (AES-128-CBC)</h2>
+          </div>
+          <button class="btn btn-primary" onclick="window.runHlsFetch()">Fetch Stream</button>
+        </div>
+        <div class="panel-body">
+          <div class="param-block">
+            <div class="param-label">HLS Playlist Manifest Header</div>
+            <div class="param-value" id="hlsManifestVal">Pending...</div>
+          </div>
+          <div class="cli-hint">
+            <span>Key Correlation & OpenSSL Decrypt Script:</span>
+            <code class="cli-code">node capture_server.js &lt;TARGET_URL&gt; --extract</code>
+          </div>
+        </div>
+      </section>
+
+      <!-- Panel 10: Heap Secret Leak Target -->
+      <section class="panel-card">
+        <div class="panel-header">
+          <div class="panel-tag-group">
+            <span class="panel-id tag-red">SUBSYSTEM 10</span>
+            <h2 class="panel-title">V8 Heap Session Credential Retention (Heap Diff Target)</h2>
+          </div>
+          <button class="btn btn-red" onclick="window.runHeapLeak()">Retain Credentials</button>
+        </div>
+        <div class="panel-body">
+          <div class="param-block">
+            <div class="param-label">Global Retained Credential Pool</div>
+            <div class="param-value" id="heapLeakVal">No retained security context allocated yet.</div>
+          </div>
+          <div class="cli-hint">
+            <span>Snapshot Memory Diff Command:</span>
+            <code class="cli-code">node capture_server.js &lt;TARGET_URL&gt; --heap-diff 2</code>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- Right: Sticky Live Event Terminal Feed -->
+    <aside class="sidebar-terminal">
+      <div class="term-header">
+        <div class="term-title">
+          <span style="color: var(--accent-emerald);">&gt;_</span>
+          <span>LIVE AUDIT FEED</span>
+        </div>
+        <button class="btn" style="padding: 2px 8px; font-size: 11px;" onclick="window.clearConsole()">Clear</button>
+      </div>
+      <div class="term-body" id="termBody">
+        <!-- Live log entries will be prepended here -->
+      </div>
+    </aside>
+
+  </main>
+
+  <script src="lab.js"></script>
+</body>
+</html>

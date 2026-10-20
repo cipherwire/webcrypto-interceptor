@@ -21,7 +21,7 @@ export default [
                 MessagePort: 'readonly', WebAssembly: 'readonly', Storage: 'readonly',
                 XMLHttpRequest: 'readonly', URL: 'readonly', Blob: 'readonly',
                 FormData: 'readonly', ArrayBuffer: 'readonly', Uint8Array: 'readonly',
-                CryptoKey: 'readonly', TextDecoder: 'readonly', AbortSignal: 'readonly', localStorage: 'readonly',
+                CryptoKey: 'readonly', TextDecoder: 'readonly', TextEncoder: 'readonly', btoa: 'readonly', atob: 'readonly', Uint32Array: 'readonly', Int32Array: 'readonly', AbortSignal: 'readonly', localStorage: 'readonly',
                 sessionStorage: 'readonly', WeakMap: 'readonly', Proxy: 'readonly',
                 Reflect: 'readonly', Object: 'readonly', JSON: 'readonly',
                 Math: 'readonly', Date: 'readonly', Promise: 'readonly', Set: 'readonly',
