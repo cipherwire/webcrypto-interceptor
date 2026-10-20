@@ -36,4 +36,4 @@ jobs:
         run: npm test
 
       - name: Syntax-check every source file
-        run: node --check capture_server.js && node --check src/cdp/session.js && node --check src/cdp/events.js && node --check src/page/stealth.js
+        run: node --check capture_server.js && node --check src/cdp/session.js && node --check src/cdp/events.js && node --check src/cdp/strings.js && node --check src/cdp/dataflow.js && node --check src/cdp/vm.js && node --check src/page/stealth.js
