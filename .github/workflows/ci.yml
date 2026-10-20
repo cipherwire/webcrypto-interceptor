@@ -29,7 +29,8 @@ jobs:
         run: npm ci
 
       - name: Verify browser availability for E2E testing
-        run: node -e "const { resolveBrowserPath } = require('./src/util/browser'); const p = resolveBrowserPath(false) || resolveBrowserPath(true); if (!p) { console.error('Error: No compatible Chrome or Brave browser found on host for E2E integration test.'); process.exit(1); } console.log('Resolved browser for E2E testing:', p);"
+        run: |
+          node -e "const { resolveBrowserPath } = require('./src/util/browser'); const p = resolveBrowserPath(false) || resolveBrowserPath(true); if (!p) { console.error('Error: No compatible Chrome or Brave browser found on host for E2E integration test.'); process.exit(1); } console.log('Resolved browser for E2E testing:', p);"
 
       - name: Run tests
         run: npm test
