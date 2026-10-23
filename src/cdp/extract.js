@@ -116,7 +116,7 @@ function resolveTarget(url) {
 
 // url: source URL, or falsy/non-http for inline <script>/eval/internal
 // sources (saved under _inline/).
-function saveFile(url, content, scriptId) {
+function saveFile(url, content, scriptId, sourceMapUrl) {
     if (!extractDir) return;
     // Skip raw media segment chunks to avoid memory and disk bloat
     if (url && /\.(ts|m4s|m4v|mp4|webm|m4a|aac|mp3|flac)(\?|$)/i.test(url)) return;
@@ -168,7 +168,7 @@ function saveFile(url, content, scriptId) {
         }
 
         // Opportunistic sourcemap detection & recovery in the background
-        handleSourcemap(url, content).catch(() => {});
+        handleSourcemap(url, content, sourceMapUrl).catch(() => {});
     } catch (e) { if (process.env.EXTRACT_DEBUG) console.error('saveFile ERR', url, e.message); }
 }
 
@@ -224,14 +224,17 @@ function unpackSourcemap(mapData, baseUrl, targetDir) {
     return count;
 }
 
-async function handleSourcemap(url, content) {
+async function handleSourcemap(url, content, explicitSourceMapUrl) {
     if (!extractDir) return;
     const text = Buffer.isBuffer(content) ? content.toString('utf8') : String(content || '');
-    if (!text.includes('sourceMappingURL')) return;
-
-    const m = text.match(SOURCEMAP_RE);
-    if (!m) return;
-    const mapRef = m[1].trim();
+    let mapRef = null;
+    if (text.includes('sourceMappingURL')) {
+        const m = text.match(SOURCEMAP_RE);
+        if (m) mapRef = m[1].trim();
+    }
+    if (!mapRef && explicitSourceMapUrl && typeof explicitSourceMapUrl === 'string') {
+        mapRef = explicitSourceMapUrl.trim();
+    }
     if (!mapRef) return;
 
     let mapJson = null;

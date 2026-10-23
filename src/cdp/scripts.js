@@ -48,7 +48,7 @@ async function attachScriptScanner(cdpSession) {
     try { await cdpSession.send('Debugger.enable'); } catch (e) { /* already enabled elsewhere */ }
 
     cdpSession.on('Debugger.scriptParsed', async (params) => {
-        const { scriptId, url, hash, length } = params;
+        const { scriptId, url, hash, length, sourceMapURL } = params;
         // Skip very small (<200 char) scripts - unlikely to embed useful keys.
         if (typeof length === 'number' && length < 200) return;
         if (shouldSkipUrl(url)) return;
@@ -65,7 +65,7 @@ async function attachScriptScanner(cdpSession) {
         }
         if (!source) return;
 
-        if (isExtracting()) saveFile(url, source, scriptId);
+        if (isExtracting()) saveFile(url, source, scriptId, sourceMapURL);
 
         const findings = scanForSecrets(source);
         if (findings.length) {

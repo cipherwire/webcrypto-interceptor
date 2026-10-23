@@ -164,3 +164,22 @@ test('saveFile skips binary media chunk URLs (.ts, .m4s) to avoid bloat', () => 
     assert.equal(fs.existsSync(chunkPath), false, 'media chunk must be skipped');
 });
 
+
+test('handleSourcemap unpacks sourcemaps when sourceMapUrl is provided via header/CDP without inline comment', async () => {
+    extract.resetExtractState();
+    extract.setExtractDir('https://webcryptotest.hainahola.store', tmpDir);
+
+    const mapData = {
+        version: 3,
+        sources: ['src/api_client.ts'],
+        sourcesContent: ['export const API_KEY = "sk_live_test_123";']
+    };
+    const dataUrl = 'data:application/json;base64,' + Buffer.from(JSON.stringify(mapData)).toString('base64');
+    const scriptWithoutComment = 'function init() { return API_KEY; }';
+
+    await extract.handleSourcemap('https://webcryptotest.hainahola.store/js/client.js', scriptWithoutComment, dataUrl);
+
+    const recoveredFile = path.join(extract.getExtractDir(), '_sources', 'webcryptotest.hainahola.store', 'src', 'api_client.ts');
+    assert.ok(fs.existsSync(recoveredFile), 'recovered source file must exist from explicit sourceMapUrl');
+    assert.equal(fs.readFileSync(recoveredFile, 'utf8'), 'export const API_KEY = "sk_live_test_123";');
+});
