@@ -17,27 +17,80 @@ test('stealth.js compiles (syntax guard for browser-injected code)', () => {
     assert.ok(!src.includes('__WCI_PART'), 'no leftover chunk markers');
 });
 
+test('stealth.js WebAssembly hooks handle TypedArray view boundaries correctly', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'page', 'stealth.js'), 'utf8');
+    const emitted = [];
+    const prevWci = globalThis.__wci;
+    globalThis.__wci = (raw) => {
+        try { emitted.push(JSON.parse(raw)); } catch {}
+    };
+
+    try {
+        new Function(src)();
+
+        // TypedArray view with non-zero byteOffset
+        const backingBuffer = new Uint8Array([0, 1, 2, 3, 4, 5, 6, 7, 0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+        const view = new Uint8Array(backingBuffer.buffer, 8, 8); // offset 8, len 8 (0061736d01000000)
+
+        WebAssembly.compile(view);
+        const wasmEvt = emitted.find(e => e.type === 'wasm' && e.data && e.data.method === 'compile');
+        assert.ok(wasmEvt, 'wasm compile event emitted');
+        assert.equal(wasmEvt.data.bytes, 8, 'Must capture exact view length (8 bytes), not backing buffer length (16)');
+
+        const hexChunk = emitted.find(e => e.type === 'wasm_hex');
+        assert.ok(hexChunk, 'wasm_hex chunk emitted');
+        assert.equal(hexChunk.hex, '0061736d01000000', 'Hex must match view bytes starting at byteOffset');
+    } finally {
+        if (prevWci !== undefined) globalThis.__wci = prevWci;
+        else delete globalThis.__wci;
+    }
+});
+
 test('isDuplicate tracks uids', () => {
     assert.equal(events.isDuplicate('u1'), false);
     assert.equal(events.isDuplicate('u1'), true);
     assert.equal(events.isDuplicate(null), false);
 });
 
-test('reassembleChunks reassembles ordered hex chunks', () => {
-    const chunks = [
-        { uid: 'c1', type: 'wasm_hex', seq: 2, of: 3, hash: 'abc', hex: 'cc' },
-        { uid: 'c1#0', type: 'wasm_hex', seq: 0, of: 3, hash: 'abc', hex: 'aa' },
-        { uid: 'c1#1', type: 'wasm_hex', seq: 1, of: 3, hash: 'abc', hex: 'bb' }
+test('reassembleChunks reassembles ordered hex chunks including real transport uid#seq envelopes', () => {
+    // 1. Shared uid envelope (legacy/synthetic)
+    const same = [
+        { uid: 'c1', type: 'wasm_hex', seq: 0, of: 3, hash: 'abc', hex: 'aa' },
+        { uid: 'c1', type: 'wasm_hex', seq: 1, of: 3, hash: 'abc', hex: 'bb' },
+        { uid: 'c1', type: 'wasm_hex', seq: 2, of: 3, hash: 'abc', hex: 'cc' }
     ];
-    // note: uid differs per chunk in the real transport; assembly keys on uid
-    // prefix logic - events.reassembleChunks keys on evt.uid, so simulate the
-    // node-side view where each chunk shares the same uid.
-    const same = chunks.map((c, i) => ({ ...c, uid: 'c1' }));
-    let out = null;
     assert.equal(events.reassembleChunks(same[0]), null);
     assert.equal(events.reassembleChunks(same[1]), null);
-    out = events.reassembleChunks(same[2]);
-    assert.equal(out, 'aabbcc');
+    assert.equal(events.reassembleChunks(same[2]), 'aabbcc');
+
+    // 2. Real transport chunk envelopes with distinct uid#seq and out-of-order arrival
+    const realChunks = [
+        { uid: 'tx42#2', type: 'wasm_hex', seq: 2, of: 3, hash: 'abc', hex: '3333' },
+        { uid: 'tx42#0', type: 'wasm_hex', seq: 0, of: 3, hash: 'abc', hex: '1111' },
+        { uid: 'tx42#1', type: 'wasm_hex', seq: 1, of: 3, hash: 'abc', hex: '2222' }
+    ];
+    assert.equal(events.reassembleChunks(realChunks[0]), null);
+    assert.equal(events.reassembleChunks(realChunks[1]), null);
+    assert.equal(events.reassembleChunks(realChunks[2]), '111122223333');
+});
+
+test('dumpWasmFromHex disambiguates colliding page hashes with content SHA-256', () => {
+    const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wci-wasm-test-'));
+    try {
+        // Module A and Module B share identical page hash 'prefix123'
+        const hexA = '0061736d01000000010401600000';
+        const hexB = '0061736d01000000010401600101'; // different bytecode
+
+        events.dumpWasmFromHex('prefix123', hexA, () => testDir);
+        events.dumpWasmFromHex('prefix123', hexB, () => testDir);
+
+        const files = fs.readdirSync(path.join(testDir, 'wasm'));
+        assert.equal(files.length, 2, 'Both modules must be preserved without overwriting');
+        assert.ok(files.some(f => f.startsWith('module_prefix123')));
+        assert.ok(files.some(f => f.includes('_')));
+    } finally {
+        fs.rmSync(testDir, { recursive: true, force: true });
+    }
 });
 
 test('structuredToLegacy preserves the [Reversed-Event] wire format', () => {

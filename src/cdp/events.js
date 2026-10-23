@@ -14,6 +14,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { C } = require('../util/colors');
 const { writeLog } = require('../util/log');
 const { trackEvent, trackWasmDump } = require('../util/summary');
@@ -41,7 +42,7 @@ function reassembleChunks(evt) {
     for (const [k, s] of pendingChunks) {
         if (now - s.ts > CHUNK_TTL_MS) pendingChunks.delete(k);
     }
-    const id = evt.uid || evt.hash;
+    const id = evt.transferId || (evt.uid && evt.uid.split('#')[0]) || evt.hash;
     let slot = pendingChunks.get(id);
     if (!slot) {
         slot = { ts: now, total: evt.of, hash: evt.hash, parts: new Map() };
@@ -125,11 +126,22 @@ function dumpWasmFromHex(hash, hex, extractDirGetter) {
         const extractDir = typeof extractDirGetter === 'function' ? extractDirGetter() : null;
         const targetDir = extractDir ? path.join(extractDir, 'wasm') : path.join(process.cwd(), 'wasm_modules');
         fs.mkdirSync(targetDir, { recursive: true });
-        const wasmPath = path.join(targetDir, `module_${hash}.wasm`);
+        const contentHash = crypto.createHash('sha256').update(buf).digest('hex').slice(0, 16);
+        let fileId = hash && hash !== 'unknown' ? hash : contentHash;
+        let wasmPath = path.join(targetDir, `module_${fileId}.wasm`);
+        if (fs.existsSync(wasmPath)) {
+            const existing = fs.readFileSync(wasmPath);
+            if (!existing.equals(buf)) {
+                fileId = `${fileId}_${contentHash}`;
+                wasmPath = path.join(targetDir, `module_${fileId}.wasm`);
+            }
+        }
         fs.writeFileSync(wasmPath, buf);
         trackWasmDump({
             file: path.relative(extractDir || process.cwd(), wasmPath).replace(/\\/g, '/'),
-            hash,
+            hash: fileId,
+            contentHash,
+            pageHash: hash,
             size: buf.length
         });
         console.log(`${C.magenta}[🧬 WASM DUMPED]${C.reset} Saved WebAssembly module (${buf.length} bytes) to ${wasmPath}`);

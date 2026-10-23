@@ -319,8 +319,16 @@
 
         function dumpWasm(bytes, method) {
             try {
-                var len = bytes.byteLength;
-                var arr = new Uint8Array(bytes);
+                if (!bytes) return;
+                var arr;
+                if (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView && ArrayBuffer.isView(bytes)) {
+                    arr = new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+                } else if (bytes instanceof ArrayBuffer) {
+                    arr = new Uint8Array(bytes);
+                } else {
+                    arr = new Uint8Array(bytes);
+                }
+                var len = arr.byteLength;
                 var hash = getWasmHash(arr);
                 emit('wasm', { method: method, bytes: len, hash: hash });
                 if (len < 5000000) {
@@ -339,24 +347,61 @@
 
         hook(WebAssembly, 'compile', function (origCompile) {
             return function compile(bufferSource) {
-                var bytes = (bufferSource instanceof ArrayBuffer) ? bufferSource : (bufferSource && bufferSource.buffer);
-                if (bytes) dumpWasm(bytes, 'compile');
+                if (bufferSource) dumpWasm(bufferSource, 'compile');
                 return origCompile.apply(this, arguments);
             };
         });
 
         hook(WebAssembly, 'instantiate', function (origInstantiate) {
             return function instantiate(bufferSource, importObject) {
-                var bytes = (bufferSource instanceof ArrayBuffer) ? bufferSource : (bufferSource && bufferSource.buffer);
-                if (bytes) dumpWasm(bytes, 'instantiate');
+                if (bufferSource && !(typeof WebAssembly.Module !== 'undefined' && bufferSource instanceof WebAssembly.Module)) {
+                    dumpWasm(bufferSource, 'instantiate');
+                }
                 return origInstantiate.apply(this, arguments);
+            };
+        });
+
+        function handleStreamingSource(source, method) {
+            if (!source) return source;
+            if (typeof source.then === 'function') {
+                return source.then(function (resp) {
+                    try {
+                        if (resp && typeof resp.clone === 'function') {
+                            var clone = resp.clone();
+                            if (typeof clone.arrayBuffer === 'function') {
+                                clone.arrayBuffer().then(function (buf) {
+                                    dumpWasm(buf, method);
+                                }).catch(function () {});
+                            }
+                        }
+                    } catch (e) {}
+                    return resp;
+                });
+            }
+            if (typeof source.clone === 'function') {
+                try {
+                    var clone = source.clone();
+                    if (typeof clone.arrayBuffer === 'function') {
+                        clone.arrayBuffer().then(function (buf) {
+                            dumpWasm(buf, method);
+                        }).catch(function () {});
+                    }
+                } catch (e) {}
+            }
+            return source;
+        }
+
+        hook(WebAssembly, 'compileStreaming', function (origCompileStreaming) {
+            return function compileStreaming(source) {
+                var wrapped = handleStreamingSource(source, 'compileStreaming');
+                return origCompileStreaming.call(this, wrapped);
             };
         });
 
         hook(WebAssembly, 'instantiateStreaming', function (origInstantiateStreaming) {
             return function instantiateStreaming(source, importObject) {
-                try { emit('wasm', { method: 'instantiateStreaming', bytes: 0, hash: 'streaming' }); } catch (e) {}
-                return origInstantiateStreaming.apply(this, arguments);
+                var wrapped = handleStreamingSource(source, 'instantiateStreaming');
+                return origInstantiateStreaming.call(this, wrapped, importObject);
             };
         });
     }
