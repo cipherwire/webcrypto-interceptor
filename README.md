@@ -88,10 +88,10 @@ This tool is designed specifically for authorized security research, protocol de
 
 ### WebAssembly and Asset Extraction
 - Logs WebAssembly module compilation via `WebAssembly.instantiate`, `WebAssembly.compile`, and streaming APIs (`WebAssembly.instantiateStreaming`, `WebAssembly.compileStreaming`).
-- Dumps compiled WebAssembly bytecode under 5 MB directly to disk with SHA-256 collision disambiguation and TypedArray view offset preservation.
+- Dumps compiled WebAssembly bytecode under 5 MB directly to disk with active stream cancellation, strict chunk sequence validation, SHA-256 collision disambiguation, and TypedArray view offset preservation.
 - Automatically unpacks Dean Edwards packed JavaScript code and extracts embedded secrets.
 - Full extraction mode (`--full`) mirrors downloaded HTML, scripts, sourcemaps, images, and rendered DOM to an organized local folder.
-- Opportunistically recovers original source files from both inline sourcemaps and HTTP header sourcemap declarations via CDP script metadata.
+- Opportunistically recovers original source files from both inline sourcemaps and HTTP header sourcemap declarations via CDP script metadata, backed by SSRF safeguards (connection-time IP pinning, RFC 1918/cloud metadata blocking, and 10MB memory limits).
 
 ### Memory Diffing and Secret Scanning
 - Compares V8 heap snapshots over a configurable interval (`--heap-diff`) to identify newly retained objects, strings, and typed arrays.
@@ -432,7 +432,7 @@ npm test
 ```
 
 The test runner executes all unit tests and automatically detects whether a local browser binary is available:
-- **Unit Tests (95 tests)**: Exercise pure logic modules (decoders, secret scanner, URL sanitization, CLI parsing, event deserialization, string table extraction, dataflow resolution, and VM state tracking) in approximately 250 milliseconds with zero external dependencies.
+- **Unit Tests (115 tests)**: Exercise pure logic modules (decoders, secret scanner, URL sanitization, CLI parsing, event deserialization, string table extraction, dataflow resolution, VM state tracking, SSRF destination protection, and WebAssembly chunk validation) in approximately 250 milliseconds with zero external dependencies.
 - **Browser E2E Test (`tests/e2e.test.js`)**: When Chrome or Brave is detected, launches headless Chrome, initializes a secure context, and confirms WebCrypto AES-GCM interception.
 
 ### Skip Browser E2E Tests
