@@ -183,3 +183,80 @@ test('handleSourcemap unpacks sourcemaps when sourceMapUrl is provided via heade
     assert.ok(fs.existsSync(recoveredFile), 'recovered source file must exist from explicit sourceMapUrl');
     assert.equal(fs.readFileSync(recoveredFile, 'utf8'), 'export const API_KEY = "sk_live_test_123";');
 });
+
+test('isDisallowedHost blocks internal, private, loopback, and metadata targets', () => {
+    // Loopback
+    assert.equal(extract.isDisallowedHost('localhost'), true);
+    assert.equal(extract.isDisallowedHost('127.0.0.1'), true);
+    assert.equal(extract.isDisallowedHost('127.255.0.1'), true);
+    assert.equal(extract.isDisallowedHost('::1'), true);
+    assert.equal(extract.isDisallowedHost('[::1]'), true);
+    assert.equal(extract.isDisallowedHost('0.0.0.0'), true);
+
+    // Link-local & cloud metadata
+    assert.equal(extract.isDisallowedHost('169.254.169.254'), true);
+    assert.equal(extract.isDisallowedHost('169.254.1.1'), true);
+    assert.equal(extract.isDisallowedHost('metadata.google.internal'), true);
+    assert.equal(extract.isDisallowedHost('fe80::1'), true);
+
+    // Private subnets (RFC 1918)
+    assert.equal(extract.isDisallowedHost('10.0.0.1'), true);
+    assert.equal(extract.isDisallowedHost('10.254.254.254'), true);
+    assert.equal(extract.isDisallowedHost('172.16.0.1'), true);
+    assert.equal(extract.isDisallowedHost('172.31.255.255'), true);
+    assert.equal(extract.isDisallowedHost('192.168.1.1'), true);
+    assert.equal(extract.isDisallowedHost('fd00::1'), true);
+
+    // Public / benign targets
+    assert.equal(extract.isDisallowedHost('example.com'), false);
+    assert.equal(extract.isDisallowedHost('cdn.webcryptotest.hainahola.store'), false);
+    assert.equal(extract.isDisallowedHost('8.8.8.8'), false);
+    assert.equal(extract.isDisallowedHost('172.15.0.1'), false);
+    assert.equal(extract.isDisallowedHost('172.32.0.1'), false);
+});
+
+test('handleSourcemap blocks SSRF targets and non-http schemes', async () => {
+    extract.resetExtractState();
+    extract.setExtractDir('https://webcryptotest.hainahola.store', tmpDir);
+
+    let fetchCalled = false;
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = async () => {
+        fetchCalled = true;
+        throw new Error('SSRF call must not be initiated');
+    };
+
+    try {
+        // 1. SSRF to AWS/GCP metadata
+        await extract.handleSourcemap('https://webcryptotest.hainahola.store/app.js', '//# sourceMappingURL=http://169.254.169.254/latest/meta-data/');
+        assert.equal(fetchCalled, false, 'Must not fetch cloud metadata endpoint');
+
+        // 2. SSRF to localhost
+        await extract.handleSourcemap('https://webcryptotest.hainahola.store/app.js', '//# sourceMappingURL=http://127.0.0.1:8080/secret.map');
+        assert.equal(fetchCalled, false, 'Must not fetch localhost endpoint');
+
+        // 3. SSRF to RFC 1918 private network
+        await extract.handleSourcemap('https://webcryptotest.hainahola.store/app.js', '//# sourceMappingURL=http://192.168.1.50/dev.map');
+        assert.equal(fetchCalled, false, 'Must not fetch private network endpoint');
+
+        // 4. Non-http scheme
+        await extract.handleSourcemap('https://webcryptotest.hainahola.store/app.js', '//# sourceMappingURL=file:///etc/passwd.map');
+        assert.equal(fetchCalled, false, 'Must not fetch file:// scheme');
+    } finally {
+        globalThis.fetch = origFetch;
+    }
+});
+
+test('handleSourcemap ignores data URLs exceeding maximum size limit', async () => {
+    extract.resetExtractState();
+    extract.setExtractDir('https://webcryptotest.hainahola.store', tmpDir);
+
+    // Data URL > 10MB
+    const hugeDataUrl = 'data:application/json;base64,' + 'A'.repeat(11 * 1024 * 1024);
+    await extract.handleSourcemap('https://webcryptotest.hainahola.store/app.js', '//# sourceMappingURL=' + hugeDataUrl);
+
+    // Must not create any source files
+    const sourcesDir = path.join(extract.getExtractDir(), '_sources');
+    assert.equal(fs.existsSync(sourcesDir), false, 'Oversized data URI must be rejected without extracting');
+});
+

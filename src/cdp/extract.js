@@ -224,6 +224,34 @@ function unpackSourcemap(mapData, baseUrl, targetDir) {
     return count;
 }
 
+function isDisallowedHost(hostname) {
+    if (!hostname || typeof hostname !== 'string') return true;
+    const host = hostname.toLowerCase().replace(/^\[|\]$/g, '').trim();
+    if (host === 'localhost' || host === '0.0.0.0' || host === '::' || host === '::1') return true;
+    if (host === 'metadata.google.internal') return true;
+
+    // IPv4 check
+    const parts = host.split('.');
+    if (parts.length === 4 && parts.every(p => /^\d+$/.test(p) && Number(p) >= 0 && Number(p) <= 255)) {
+        const b0 = Number(parts[0]);
+        const b1 = Number(parts[1]);
+        if (b0 === 127) return true; // 127.0.0.0/8 loopback
+        if (b0 === 10) return true;  // 10.0.0.0/8 private
+        if (b0 === 169 && b1 === 254) return true; // 169.254.0.0/16 link-local metadata
+        if (b0 === 192 && b1 === 168) return true; // 192.168.0.0/16 private
+        if (b0 === 172 && b1 >= 16 && b1 <= 31) return true; // 172.16.0.0/12 private
+        if (b0 === 0) return true;
+    }
+
+    // IPv6 check
+    if (host.includes(':')) {
+        if (/^fe[89ab]/i.test(host)) return true; // fe80::/10 link-local
+        if (/^f[cd]/i.test(host)) return true;   // fc00::/7 unique local
+    }
+
+    return false;
+}
+
 async function handleSourcemap(url, content, explicitSourceMapUrl) {
     if (!extractDir) return;
     const text = Buffer.isBuffer(content) ? content.toString('utf8') : String(content || '');
@@ -238,8 +266,10 @@ async function handleSourcemap(url, content, explicitSourceMapUrl) {
     if (!mapRef) return;
 
     let mapJson = null;
+    const MAX_MAP_SIZE = 10 * 1024 * 1024; // 10MB memory limit
     if (mapRef.startsWith('data:')) {
         try {
+            if (mapRef.length > MAX_MAP_SIZE) return;
             if (mapRef.includes('base64,')) {
                 mapJson = Buffer.from(mapRef.split('base64,')[1], 'base64').toString('utf8');
             } else if (mapRef.includes(',')) {
@@ -248,18 +278,50 @@ async function handleSourcemap(url, content, explicitSourceMapUrl) {
         } catch (e) { return; }
     } else {
         if (!url || !/^https?:\/\//i.test(url)) return;
-        let mapUrl;
+        let mapUrlObj;
         try {
-            mapUrl = new URL(mapRef, url).href;
+            mapUrlObj = new URL(mapRef, url);
         } catch (e) { return; }
 
+        // Enforce scheme and SSRF protection
+        if (mapUrlObj.protocol !== 'http:' && mapUrlObj.protocol !== 'https:') return;
+        if (isDisallowedHost(mapUrlObj.hostname)) return;
+
+        const mapUrl = mapUrlObj.href;
         if (seenMaps.has(mapUrl)) return;
         seenMaps.add(mapUrl);
 
         try {
             const resp = await fetch(mapUrl, { signal: AbortSignal.timeout(5000) });
             if (!resp.ok) return;
-            mapJson = await resp.text();
+
+            const cl = resp.headers && resp.headers.get('content-length');
+            if (cl && parseInt(cl, 10) > MAX_MAP_SIZE) return;
+
+            if (resp.body && typeof resp.body.getReader === 'function') {
+                const reader = resp.body.getReader();
+                const decoder = new TextDecoder('utf-8');
+                let bytesRead = 0;
+                let assembled = '';
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    if (value) {
+                        bytesRead += value.byteLength || value.length || 0;
+                        if (bytesRead > MAX_MAP_SIZE) {
+                            try { await reader.cancel(); } catch (e) {}
+                            return;
+                        }
+                        assembled += decoder.decode(value, { stream: true });
+                    }
+                }
+                assembled += decoder.decode();
+                mapJson = assembled;
+            } else {
+                const buf = await resp.arrayBuffer();
+                if (buf.byteLength > MAX_MAP_SIZE) return;
+                mapJson = Buffer.from(buf).toString('utf8');
+            }
             saveFile(mapUrl, mapJson);
         } catch (e) { return; }
     }
@@ -297,5 +359,6 @@ module.exports = {
     cleanSourcePath,
     unpackSourcemap,
     handleSourcemap,
+    isDisallowedHost,
     resetExtractState
 };
