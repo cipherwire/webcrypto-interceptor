@@ -259,4 +259,3 @@ test('handleSourcemap ignores data URLs exceeding maximum size limit', async () 
     const sourcesDir = path.join(extract.getExtractDir(), '_sources');
     assert.equal(fs.existsSync(sourcesDir), false, 'Oversized data URI must be rejected without extracting');
 });
-
