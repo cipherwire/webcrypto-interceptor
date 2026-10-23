@@ -1,3 +1,5 @@
+const dns = require('dns').promises;
+const net = require('net');
 // --full mode: dump every script source and response body seen on the page
 // to disk, mirroring each URL's own path - a poor-man's "save whole site".
 const fs = require('fs');
@@ -226,9 +228,33 @@ function unpackSourcemap(mapData, baseUrl, targetDir) {
 
 function isDisallowedHost(hostname) {
     if (!hostname || typeof hostname !== 'string') return true;
-    const host = hostname.toLowerCase().replace(/^\[|\]$/g, '').trim();
+    let host = hostname.toLowerCase().replace(/^\[|\]$/g, '').trim();
     if (host === 'localhost' || host === '0.0.0.0' || host === '::' || host === '::1') return true;
     if (host === 'metadata.google.internal') return true;
+
+    // Check IPv4-mapped IPv6: ::ffff:127.0.0.1 or ::ffff:7f00:1
+    if (host.startsWith('::ffff:')) {
+        const v4Part = host.slice(7);
+        if (v4Part.includes('.')) {
+            return isDisallowedHost(v4Part);
+        }
+        const hexParts = v4Part.split(':');
+        if (hexParts.length === 2) {
+            const hi = parseInt(hexParts[0], 16);
+            const lo = parseInt(hexParts[1], 16);
+            if (!isNaN(hi) && !isNaN(lo)) {
+                return isDisallowedHost(`${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`);
+            }
+        }
+    }
+
+    // Normalize potential numeric, octal, hex, or short IP representations using WHATWG parser
+    try {
+        const dummy = new URL('http://' + (host.includes(':') ? `[${host}]` : host));
+        host = dummy.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+    } catch (e) {}
+
+    if (host === 'localhost' || host === '0.0.0.0' || host === '::' || host === '::1') return true;
 
     // IPv4 check
     const parts = host.split('.');
@@ -249,6 +275,29 @@ function isDisallowedHost(hostname) {
         if (/^f[cd]/i.test(host)) return true;   // fc00::/7 unique local
     }
 
+    return false;
+}
+
+async function isDisallowedDns(hostname) {
+    if (!hostname || typeof hostname !== 'string') return true;
+    const cleanHost = hostname.toLowerCase().replace(/^\[|\]$/g, '').trim();
+    if (net.isIP(cleanHost)) {
+        return isDisallowedHost(cleanHost);
+    }
+    if (isDisallowedHost(cleanHost)) {
+        return true;
+    }
+    try {
+        const addresses = await dns.lookup(cleanHost, { all: true });
+        if (!addresses || !addresses.length) return true;
+        for (const addr of addresses) {
+            if (isDisallowedHost(addr.address)) {
+                return true;
+            }
+        }
+    } catch (e) {
+        return true;
+    }
     return false;
 }
 
@@ -283,18 +332,42 @@ async function handleSourcemap(url, content, explicitSourceMapUrl) {
             mapUrlObj = new URL(mapRef, url);
         } catch (e) { return; }
 
-        // Enforce scheme and SSRF protection
         if (mapUrlObj.protocol !== 'http:' && mapUrlObj.protocol !== 'https:') return;
         if (isDisallowedHost(mapUrlObj.hostname)) return;
 
-        const mapUrl = mapUrlObj.href;
+        let mapUrl = mapUrlObj.href;
         if (seenMaps.has(mapUrl)) return;
         seenMaps.add(mapUrl);
 
         try {
-            const resp = await fetch(mapUrl, { signal: AbortSignal.timeout(5000) });
-            if (!resp.ok) return;
+            let resp = null;
+            const MAX_REDIRECTS = 3;
+            for (let redirectHop = 0; redirectHop <= MAX_REDIRECTS; redirectHop++) {
+                // Validate destination before each hop
+                if (mapUrlObj.protocol !== 'http:' && mapUrlObj.protocol !== 'https:') return;
+                if (isDisallowedHost(mapUrlObj.hostname)) return;
+                if (await isDisallowedDns(mapUrlObj.hostname)) return;
 
+                resp = await fetch(mapUrlObj.href, {
+                    redirect: 'manual',
+                    signal: AbortSignal.timeout(5000)
+                });
+
+                // Follow redirects manually to inspect and enforce policy on next hop
+                if (resp.status >= 300 && resp.status < 400) {
+                    const locationHeader = resp.headers.get('location');
+                    if (!locationHeader) return;
+                    try {
+                        mapUrlObj = new URL(locationHeader, mapUrlObj.href);
+                    } catch (e) { return; }
+                    continue;
+                }
+                break;
+            }
+
+            if (!resp || !resp.ok) return;
+
+            mapUrl = mapUrlObj.href;
             const cl = resp.headers && resp.headers.get('content-length');
             if (cl && parseInt(cl, 10) > MAX_MAP_SIZE) return;
 
@@ -360,5 +433,6 @@ module.exports = {
     unpackSourcemap,
     handleSourcemap,
     isDisallowedHost,
+    isDisallowedDns,
     resetExtractState
 };

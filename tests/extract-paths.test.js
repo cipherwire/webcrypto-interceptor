@@ -259,3 +259,143 @@ test('handleSourcemap ignores data URLs exceeding maximum size limit', async () 
     const sourcesDir = path.join(extract.getExtractDir(), '_sources');
     assert.equal(fs.existsSync(sourcesDir), false, 'Oversized data URI must be rejected without extracting');
 });
+
+test('isDisallowedHost normalizes and blocks alternative IP representations', () => {
+    // Decimal integer notation
+    assert.equal(extract.isDisallowedHost('2130706433'), true); // 127.0.0.1
+    assert.equal(extract.isDisallowedHost('167772161'), true);  // 10.0.0.1
+    assert.equal(extract.isDisallowedHost('2852039166'), true); // 169.254.169.254
+    assert.equal(extract.isDisallowedHost('3232235777'), true); // 192.168.1.1
+    assert.equal(extract.isDisallowedHost('0'), true);          // 0.0.0.0
+
+    // Hex and octal notation
+    assert.equal(extract.isDisallowedHost('0x7f000001'), true);
+    assert.equal(extract.isDisallowedHost('0177.0.0.1'), true);
+    assert.equal(extract.isDisallowedHost('127.1'), true);
+
+    // IPv4-mapped IPv6 notation
+    assert.equal(extract.isDisallowedHost('::ffff:127.0.0.1'), true);
+    assert.equal(extract.isDisallowedHost('[::ffff:127.0.0.1]'), true);
+    assert.equal(extract.isDisallowedHost('::ffff:7f00:1'), true);
+    assert.equal(extract.isDisallowedHost('[::ffff:7f00:1]'), true);
+    assert.equal(extract.isDisallowedHost('::ffff:a00:1'), true); // 10.0.0.1
+    assert.equal(extract.isDisallowedHost('::ffff:c0a8:101'), true); // 192.168.1.1
+});
+
+test('isDisallowedDns detects hostnames that resolve to internal IPs', async () => {
+    assert.equal(await extract.isDisallowedDns('localhost'), true);
+    assert.equal(await extract.isDisallowedDns('127.0.0.1'), true);
+    assert.equal(await extract.isDisallowedDns('169.254.169.254'), true);
+});
+
+test('handleSourcemap blocks redirects to private or internal destinations', async () => {
+    extract.resetExtractState();
+    extract.setExtractDir('https://webcryptotest.hainahola.store', tmpDir);
+
+    const requestsMade = [];
+    const origFetch = globalThis.fetch;
+
+    globalThis.fetch = async (targetUrl, opts) => {
+        requestsMade.push(targetUrl);
+        // Mock a redirect from public origin to internal metadata
+        if (targetUrl === 'https://webcryptotest.hainahola.store/redirect-to-meta.map') {
+            return {
+                status: 302,
+                ok: false,
+                headers: new Map([['location', 'http://169.254.169.254/latest/meta-data/']])
+            };
+        }
+        if (targetUrl === 'https://webcryptotest.hainahola.store/redirect-to-local.map') {
+            return {
+                status: 302,
+                ok: false,
+                headers: new Map([['location', 'http://127.0.0.1:8080/secret.json']])
+            };
+        }
+        if (targetUrl === 'https://webcryptotest.hainahola.store/redirect-to-dword.map') {
+            return {
+                status: 302,
+                ok: false,
+                headers: new Map([['location', 'http://2130706433/secret.json']])
+            };
+        }
+        throw new Error('Unexpected fetch call to ' + targetUrl);
+    };
+
+    try {
+        // 1. Redirect to cloud metadata
+        await extract.handleSourcemap('https://webcryptotest.hainahola.store/app.js', '//# sourceMappingURL=https://webcryptotest.hainahola.store/redirect-to-meta.map');
+        assert.ok(!requestsMade.includes('http://169.254.169.254/latest/meta-data/'), 'Redirect destination must not be requested');
+
+        // 2. Redirect to localhost
+        requestsMade.length = 0;
+        await extract.handleSourcemap('https://webcryptotest.hainahola.store/app.js', '//# sourceMappingURL=https://webcryptotest.hainahola.store/redirect-to-local.map');
+        assert.ok(!requestsMade.includes('http://127.0.0.1:8080/secret.json'), 'Localhost redirect must be blocked');
+
+        // 3. Redirect to dword integer IP
+        requestsMade.length = 0;
+        await extract.handleSourcemap('https://webcryptotest.hainahola.store/app.js', '//# sourceMappingURL=https://webcryptotest.hainahola.store/redirect-to-dword.map');
+        assert.ok(!requestsMade.some(u => u.includes('2130706433')), 'Dword IP redirect must be blocked');
+    } finally {
+        globalThis.fetch = origFetch;
+    }
+});
+
+test('handleSourcemap follows valid external redirects safely', async () => {
+    extract.resetExtractState();
+    extract.setExtractDir('https://webcryptotest.hainahola.store', tmpDir);
+
+    const mapData = {
+        version: 3,
+        sources: ['src/redirected.ts'],
+        sourcesContent: ['export const REDIRECTED = true;']
+    };
+    const mapJson = JSON.stringify(mapData);
+
+    const dns = require('dns');
+    const origDnsLookup = dns.promises.lookup;
+    dns.promises.lookup = async (host, opts) => {
+        if (host === 'cdn.example.com' || host === 'webcryptotest.hainahola.store') {
+            return [{ address: '93.184.216.34', family: 4 }];
+        }
+        return origDnsLookup.call(dns.promises, host, opts);
+    };
+
+    const origFetch = globalThis.fetch;
+    const fetchCalls = [];
+
+    globalThis.fetch = async (targetUrl, opts) => {
+        fetchCalls.push(targetUrl);
+        if (targetUrl === 'https://webcryptotest.hainahola.store/hop1.map') {
+            return {
+                status: 302,
+                ok: false,
+                headers: new Map([['location', 'https://cdn.example.com/assets/hop2.map']])
+            };
+        }
+        if (targetUrl === 'https://cdn.example.com/assets/hop2.map') {
+            return {
+                status: 200,
+                ok: true,
+                headers: new Map([['content-length', String(Buffer.byteLength(mapJson))]]),
+                text: async () => mapJson,
+                arrayBuffer: async () => Buffer.from(mapJson)
+            };
+        }
+        throw new Error('Unexpected URL ' + targetUrl);
+    };
+
+    try {
+        await extract.handleSourcemap('https://webcryptotest.hainahola.store/app.js', '//# sourceMappingURL=https://webcryptotest.hainahola.store/hop1.map');
+        assert.equal(fetchCalls.length, 2);
+        assert.equal(fetchCalls[0], 'https://webcryptotest.hainahola.store/hop1.map');
+        assert.equal(fetchCalls[1], 'https://cdn.example.com/assets/hop2.map');
+
+        const recovered = path.join(extract.getExtractDir(), '_sources', 'webcryptotest.hainahola.store', 'src', 'redirected.ts');
+        assert.ok(fs.existsSync(recovered), 'Source file must be recovered through valid redirect');
+        assert.equal(fs.readFileSync(recovered, 'utf8'), 'export const REDIRECTED = true;');
+    } finally {
+        globalThis.fetch = origFetch;
+        dns.promises.lookup = origDnsLookup;
+    }
+});
