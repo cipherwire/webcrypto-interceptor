@@ -14,6 +14,7 @@ WebCrypto Interceptor combines native Chrome DevTools Protocol (CDP) debugging c
 
 <p>
   <a href="#project-overview">Overview</a> &bull;
+  <a href="https://webcrypto.cipherwire.link" target="_blank">Documentation Site</a> &bull;
   <a href="#features">Features</a> &bull;
   <a href="#requirements-and-compatibility">Requirements</a> &bull;
   <a href="#installation">Installation</a> &bull;
@@ -86,10 +87,11 @@ This tool is designed specifically for authorized security research, protocol de
 - Captures paired `(input, output)` execution tuples using the `--hook-return` option to support clean-room verification.
 
 ### WebAssembly and Asset Extraction
-- Logs WebAssembly module compilation via `WebAssembly.instantiate` and `WebAssembly.compile`.
-- Dumps compiled WebAssembly bytecode under 5 MB directly to disk.
+- Logs WebAssembly module compilation via `WebAssembly.instantiate`, `WebAssembly.compile`, and streaming APIs (`WebAssembly.instantiateStreaming`, `WebAssembly.compileStreaming`).
+- Dumps compiled WebAssembly bytecode under 5 MB directly to disk with SHA-256 collision disambiguation and TypedArray view offset preservation.
 - Automatically unpacks Dean Edwards packed JavaScript code and extracts embedded secrets.
 - Full extraction mode (`--full`) mirrors downloaded HTML, scripts, sourcemaps, images, and rendered DOM to an organized local folder.
+- Opportunistically recovers original source files from both inline sourcemaps and HTTP header sourcemap declarations via CDP script metadata.
 
 ### Memory Diffing and Secret Scanning
 - Compares V8 heap snapshots over a configurable interval (`--heap-diff`) to identify newly retained objects, strings, and typed arrays.
@@ -230,7 +232,7 @@ node capture_server.js <URL> [options]
 | `--hook <expr>` | String | `[]` | Arm function call breakpoint. Repeatable option. |
 | `--hook-return <expr>` | String | `[]` | Arm function call and return breakpoints for input/output logging. Repeatable. |
 | `--trace-flow <expr>` | String | `[]` | Arm return breakpoint and trace downstream consumer variable and frame. Repeatable. |
-| `--dump-strings <expr>` | String | `null` | Drive page's runtime string decoder across index ranges to dump rotated string tables. |
+| `--dump-strings <expr>` | String | `null` | Drive page's runtime string decoder via high-speed batched CDP evaluation across index ranges. |
 | `--trace-vm <loc>` | String | `[]` | Trace a bytecode VM dispatch loop at script location `<urlRegex:line[:column]>`. |
 | `--watch <exprs>` | String | `null` | Comma-separated expressions to evaluate on VM loop hit (`pc,op,stack[sp]`). |
 | `--heap-diff <sec>` | Integer | `0` | Capture two heap snapshots separated by N seconds to report retained allocations. |
