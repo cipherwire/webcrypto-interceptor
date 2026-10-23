@@ -28,12 +28,47 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Configure E2E environment on macOS
+        if: runner.os == 'macOS'
+        run: echo "SKIP_E2E=1" >> $GITHUB_ENV
+
       - name: Verify browser availability for E2E testing
+        if: runner.os != 'macOS'
         run: |
           node -e "const { resolveBrowserPath } = require('./src/util/browser'); const p = resolveBrowserPath(false) || resolveBrowserPath(true); if (!p) { console.error('Error: No compatible Chrome or Brave browser found on host for E2E integration test.'); process.exit(1); } console.log('Resolved browser for E2E testing:', p);"
 
-      - name: Run tests
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Run test suite
         run: npm test
 
-      - name: Syntax-check every source file
-        run: node --check capture_server.js && node --check src/cdp/session.js && node --check src/cdp/events.js && node --check src/cdp/strings.js && node --check src/cdp/dataflow.js && node --check src/cdp/vm.js && node --check src/page/stealth.js
+      - name: Check dependency security audit
+        run: npm audit --audit-level=high
+
+      - name: Comprehensive syntax check
+        run: |
+          node --check capture_server.js
+          node --check src/cli.js
+          node --check src/config.js
+          node --check src/page/stealth.js
+          node --check src/cdp/session.js
+          node --check src/cdp/events.js
+          node --check src/cdp/strings.js
+          node --check src/cdp/dataflow.js
+          node --check src/cdp/vm.js
+          node --check src/cdp/hooks.js
+          node --check src/cdp/network.js
+          node --check src/cdp/extract.js
+          node --check src/cdp/crypto.js
+          node --check src/cdp/heapdiff.js
+          node --check src/cdp/anti-debug.js
+          node --check src/util/browser.js
+          node --check src/util/colors.js
+          node --check src/util/decoders.js
+          node --check src/util/log.js
+          node --check src/util/secrets.js
+          node --check src/util/summary.js
+          node --check scripts/unpack-strings.js
+          node --check scripts/extract-keys.js
+          node --check scripts/verify-reimpl.js

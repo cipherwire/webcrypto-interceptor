@@ -5,7 +5,9 @@ const assert = require('node:assert/strict');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { resolveBrowserPath } = require('../src/util/browser');
+const log = require('../src/util/log');
 
 const browserPath = resolveBrowserPath(false) || resolveBrowserPath(true);
 const isCI = Boolean(process.env.CI || process.env.GITHUB_ACTIONS);
@@ -19,6 +21,9 @@ test('End-to-end: live browser WebCrypto interception', { skip: skipReason }, as
     }
     const puppeteer = require('puppeteer');
     const { attachToSession } = require('../src/cdp/session');
+
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wci-e2e-'));
+    log.setLogDir(tmpDir);
 
     // Spin up local HTTP server to guarantee a Secure Context
     const server = http.createServer((req, res) => {
@@ -83,8 +88,32 @@ test('End-to-end: live browser WebCrypto interception', { skip: skipReason }, as
         assert.ok(evalResult.ciphertextLen > 0, 'Ciphertext must be generated');
 
         // Allow microtask cycle for event dispatch
-        await new Promise(r => setTimeout(r, 500));
+        await new Promise(r => setTimeout(r, 600));
+
+        // Verify that the interceptor received and persisted the events to disk
+        const logPath = log.getLogFile();
+        assert.ok(fs.existsSync(logPath), 'Session log file must exist');
+        const logContent = fs.readFileSync(logPath, 'utf8');
+        const logLines = logContent.trim().split('\n').map(line => {
+            try { return JSON.parse(line); } catch { return null; }
+        }).filter(Boolean);
+
+        const hookEvents = logLines.filter(e => e.type === 'hook_event' && typeof e.message === 'string');
+        const cryptoArgs = hookEvents.filter(e => e.message.includes('CRYPTO-ARGS'));
+        const cryptoResults = hookEvents.filter(e => e.message.includes('CRYPTO-RESULT'));
+
+        assert.ok(cryptoArgs.length >= 2, 'Should capture at least generateKey and encrypt calls');
+        assert.ok(cryptoResults.length >= 2, 'Should capture at least generateKey and encrypt results');
+
+        const hasAesGcm = cryptoArgs.some(e => e.message.includes('AES-GCM'));
+        assert.equal(hasAesGcm, true, 'Intercepted args must include AES-GCM');
+
+        const hasPlaintext = cryptoArgs.some(e => e.message.includes('E2E WebCrypto Interception Verified'));
+        assert.equal(hasPlaintext, true, 'Intercepted args must include cleartext plaintext');
     } finally {
+        log.closeLog();
+        log.resetLogStateForTesting();
+        try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
         await browser.close();
         server.close();
     }
