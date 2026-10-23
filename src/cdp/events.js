@@ -37,21 +37,59 @@ function isDuplicate(uid) {
 // Chunked payload reassembly (wasm_hex): chunkId -> {parts: Map, total, hash}
 const pendingChunks = new Map();
 const CHUNK_TTL_MS = 120000;
+const MAX_PENDING_CHUNKS = 500;
+const MAX_CHUNK_COUNT = 2000;
+
 function reassembleChunks(evt) {
+    if (!evt || typeof evt !== 'object') return null;
+    if (typeof evt.hex !== 'string') return null;
+
+    // Validate chunk count: integer in [1, MAX_CHUNK_COUNT]
+    if (!Number.isInteger(evt.of) || evt.of < 1 || evt.of > MAX_CHUNK_COUNT) {
+        return null;
+    }
+
+    // Validate sequence: integer in [0, evt.of - 1]
+    if (!Number.isInteger(evt.seq) || evt.seq < 0 || evt.seq >= evt.of) {
+        return null;
+    }
+
+    const id = evt.transferId || (typeof evt.uid === 'string' && evt.uid.split('#')[0]) || evt.hash;
+    if (!id || typeof id !== 'string') return null;
+
     const now = Date.now();
     for (const [k, s] of pendingChunks) {
         if (now - s.ts > CHUNK_TTL_MS) pendingChunks.delete(k);
     }
-    const id = evt.transferId || (evt.uid && evt.uid.split('#')[0]) || evt.hash;
+
     let slot = pendingChunks.get(id);
     if (!slot) {
+        if (pendingChunks.size >= MAX_PENDING_CHUNKS) {
+            const firstKey = pendingChunks.keys().next().value;
+            if (firstKey) pendingChunks.delete(firstKey);
+        }
         slot = { ts: now, total: evt.of, hash: evt.hash, parts: new Map() };
         pendingChunks.set(id, slot);
+    } else {
+        // Reject inconsistent metadata for the same transfer
+        if (slot.total !== evt.of || (evt.hash && slot.hash && slot.hash !== evt.hash)) {
+            return null;
+        }
     }
-    slot.parts.set(evt.seq, evt.hex || '');
+
+    slot.parts.set(evt.seq, evt.hex);
+
     if (slot.parts.size < slot.total) return null;
+
+    // Strict completeness check: verify that all sequences from 0 to total-1 are present
+    for (let i = 0; i < slot.total; i++) {
+        if (!slot.parts.has(i)) return null;
+    }
+
     let hex = '';
-    for (let i = 0; i < slot.total; i++) hex += slot.parts.get(i) || '';
+    for (let i = 0; i < slot.total; i++) {
+        hex += slot.parts.get(i);
+    }
     pendingChunks.delete(id);
     return hex;
 }
