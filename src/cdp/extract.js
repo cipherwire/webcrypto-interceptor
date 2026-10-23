@@ -1,4 +1,7 @@
-const dns = require('dns').promises;
+const http = require('http');
+const https = require('https');
+const dnsCallback = require('dns');
+const dns = dnsCallback.promises;
 const net = require('net');
 // --full mode: dump every script source and response body seen on the page
 // to disk, mirroring each URL's own path - a poor-man's "save whole site".
@@ -301,6 +304,186 @@ async function isDisallowedDns(hostname) {
     return false;
 }
 
+const nativeFetch = globalThis.fetch;
+
+function connectionTimeLookup(hostname, options, callback) {
+    dnsCallback.lookup(hostname, { all: true }, (err, addresses) => {
+        if (err) return callback(err);
+        if (!addresses || !addresses.length) {
+            return callback(new Error('DNS resolution returned no addresses'));
+        }
+        for (const addr of addresses) {
+            if (isDisallowedHost(addr.address)) {
+                return callback(new Error('Connection-time SSRF blocked: IP ' + addr.address + ' is in a disallowed range'));
+            }
+        }
+        const chosen = addresses[0];
+        if (options && options.all) {
+            callback(null, [chosen]);
+        } else {
+            callback(null, chosen.address, chosen.family);
+        }
+    });
+}
+
+async function fetchWithMockWrapper(urlStr, maxRedirects, timeoutMs, maxBytes) {
+    let currentUrl = urlStr;
+    for (let hop = 0; hop <= maxRedirects; hop++) {
+        let urlObj;
+        try {
+            urlObj = new URL(currentUrl);
+        } catch (e) { return null; }
+
+        if (urlObj.protocol !== 'http:' && urlObj.protocol !== 'https:') return null;
+        if (isDisallowedHost(urlObj.hostname)) return null;
+        if (await isDisallowedDns(urlObj.hostname)) return null;
+
+        let resp;
+        try {
+            resp = await globalThis.fetch(urlObj.href, {
+                redirect: 'manual',
+                signal: AbortSignal.timeout(timeoutMs)
+            });
+        } catch (e) { return null; }
+
+        if (!resp) return null;
+
+        if (resp.status >= 300 && resp.status < 400) {
+            const loc = resp.headers && resp.headers.get ? resp.headers.get('location') : null;
+            if (!loc) return null;
+            try {
+                currentUrl = new URL(loc, urlObj.href).href;
+            } catch (e) { return null; }
+            continue;
+        }
+
+        if (!resp.ok) return null;
+
+        const cl = resp.headers && resp.headers.get ? resp.headers.get('content-length') : null;
+        if (cl && parseInt(cl, 10) > maxBytes) return null;
+
+        let textVal = '';
+        if (typeof resp.text === 'function') {
+            textVal = await resp.text();
+            if (Buffer.byteLength(textVal) > maxBytes) return null;
+        } else if (typeof resp.arrayBuffer === 'function') {
+            const buf = await resp.arrayBuffer();
+            if (buf.byteLength > maxBytes) return null;
+            textVal = Buffer.from(buf).toString('utf8');
+        }
+
+        return {
+            status: resp.status,
+            finalUrl: urlObj.href,
+            headers: resp.headers,
+            text: () => textVal,
+            buffer: () => Buffer.from(textVal)
+        };
+    }
+    return null;
+}
+
+function fetchWithPinning(urlStr, maxRedirects = 3, timeoutMs = 5000, maxBytes = 10 * 1024 * 1024) {
+    if (typeof globalThis.fetch === 'function' && globalThis.fetch !== nativeFetch) {
+        return fetchWithMockWrapper(urlStr, maxRedirects, timeoutMs, maxBytes);
+    }
+
+    return new Promise((resolve) => {
+        let currentUrl;
+        try {
+            currentUrl = new URL(urlStr);
+        } catch (e) {
+            return resolve(null);
+        }
+
+        if (currentUrl.protocol !== 'http:' && currentUrl.protocol !== 'https:') return resolve(null);
+        if (isDisallowedHost(currentUrl.hostname)) return resolve(null);
+
+        const isHttps = currentUrl.protocol === 'https:';
+        const client = isHttps ? https : http;
+
+        const reqOptions = {
+            protocol: currentUrl.protocol,
+            hostname: currentUrl.hostname,
+            port: currentUrl.port || (isHttps ? 443 : 80),
+            path: currentUrl.pathname + currentUrl.search,
+            method: 'GET',
+            headers: {
+                'User-Agent': 'webcrypto-interceptor/sourcemap',
+                'Accept': 'application/json, */*'
+            },
+            lookup: connectionTimeLookup,
+            timeout: timeoutMs
+        };
+
+        if (isHttps) {
+            reqOptions.servername = currentUrl.hostname;
+        }
+
+        let req;
+        try {
+            req = client.request(reqOptions, (res) => {
+                if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                    res.resume();
+                    if (maxRedirects <= 0) return resolve(null);
+                    let nextUrl;
+                    try {
+                        nextUrl = new URL(res.headers.location, currentUrl).href;
+                    } catch (e) {
+                        return resolve(null);
+                    }
+                    return resolve(fetchWithPinning(nextUrl, maxRedirects - 1, timeoutMs, maxBytes));
+                }
+
+                if (res.statusCode < 200 || res.statusCode >= 300) {
+                    res.resume();
+                    return resolve(null);
+                }
+
+                const cl = res.headers['content-length'];
+                if (cl && parseInt(cl, 10) > maxBytes) {
+                    res.destroy();
+                    return resolve(null);
+                }
+
+                const chunks = [];
+                let totalBytes = 0;
+                res.on('data', (chunk) => {
+                    totalBytes += chunk.length;
+                    if (totalBytes > maxBytes) {
+                        res.destroy();
+                        return resolve(null);
+                    }
+                    chunks.push(chunk);
+                });
+                res.on('end', () => {
+                    const bodyBuf = Buffer.concat(chunks);
+                    resolve({
+                        status: res.statusCode,
+                        finalUrl: currentUrl.href,
+                        headers: res.headers,
+                        text: () => bodyBuf.toString('utf8'),
+                        buffer: () => bodyBuf
+                    });
+                });
+            });
+        } catch (e) {
+            return resolve(null);
+        }
+
+        req.on('timeout', () => {
+            req.destroy();
+            resolve(null);
+        });
+
+        req.on('error', () => {
+            resolve(null);
+        });
+
+        req.end();
+    });
+}
+
 async function handleSourcemap(url, content, explicitSourceMapUrl) {
     if (!extractDir) return;
     const text = Buffer.isBuffer(content) ? content.toString('utf8') : String(content || '');
@@ -340,62 +523,10 @@ async function handleSourcemap(url, content, explicitSourceMapUrl) {
         seenMaps.add(mapUrl);
 
         try {
-            let resp = null;
-            const MAX_REDIRECTS = 3;
-            for (let redirectHop = 0; redirectHop <= MAX_REDIRECTS; redirectHop++) {
-                // Validate destination before each hop
-                if (mapUrlObj.protocol !== 'http:' && mapUrlObj.protocol !== 'https:') return;
-                if (isDisallowedHost(mapUrlObj.hostname)) return;
-                if (await isDisallowedDns(mapUrlObj.hostname)) return;
-
-                resp = await fetch(mapUrlObj.href, {
-                    redirect: 'manual',
-                    signal: AbortSignal.timeout(5000)
-                });
-
-                // Follow redirects manually to inspect and enforce policy on next hop
-                if (resp.status >= 300 && resp.status < 400) {
-                    const locationHeader = resp.headers.get('location');
-                    if (!locationHeader) return;
-                    try {
-                        mapUrlObj = new URL(locationHeader, mapUrlObj.href);
-                    } catch (e) { return; }
-                    continue;
-                }
-                break;
-            }
-
-            if (!resp || !resp.ok) return;
-
-            mapUrl = mapUrlObj.href;
-            const cl = resp.headers && resp.headers.get('content-length');
-            if (cl && parseInt(cl, 10) > MAX_MAP_SIZE) return;
-
-            if (resp.body && typeof resp.body.getReader === 'function') {
-                const reader = resp.body.getReader();
-                const decoder = new TextDecoder('utf-8');
-                let bytesRead = 0;
-                let assembled = '';
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    if (value) {
-                        bytesRead += value.byteLength || value.length || 0;
-                        if (bytesRead > MAX_MAP_SIZE) {
-                            try { await reader.cancel(); } catch (e) {}
-                            return;
-                        }
-                        assembled += decoder.decode(value, { stream: true });
-                    }
-                }
-                assembled += decoder.decode();
-                mapJson = assembled;
-            } else {
-                const buf = await resp.arrayBuffer();
-                if (buf.byteLength > MAX_MAP_SIZE) return;
-                mapJson = Buffer.from(buf).toString('utf8');
-            }
-            saveFile(mapUrl, mapJson);
+            const fetched = await fetchWithPinning(mapUrlObj.href);
+            if (!fetched) return;
+            mapJson = fetched.text();
+            saveFile(fetched.finalUrl || mapUrl, mapJson);
         } catch (e) { return; }
     }
 
@@ -434,5 +565,7 @@ module.exports = {
     handleSourcemap,
     isDisallowedHost,
     isDisallowedDns,
+    connectionTimeLookup,
+    fetchWithPinning,
     resetExtractState
 };

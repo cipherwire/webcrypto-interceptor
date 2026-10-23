@@ -399,3 +399,62 @@ test('handleSourcemap follows valid external redirects safely', async () => {
         dns.promises.lookup = origDnsLookup;
     }
 });
+
+test('connectionTimeLookup rejects disallowed IP addresses at socket lookup time', (t, done) => {
+    const dns = require('dns');
+    const origLookup = dns.lookup;
+    dns.lookup = (hostname, opts, cb) => {
+        if (typeof opts === 'function') {
+            cb = opts;
+            opts = {};
+        }
+        cb(null, [{ address: '127.0.0.1', family: 4 }]);
+    };
+
+    extract.connectionTimeLookup('malicious-rebound.example.com', {}, (err, address, family) => {
+        dns.lookup = origLookup;
+        assert.ok(err, 'Must produce an error for disallowed IP');
+        assert.ok(err.message.includes('Connection-time SSRF blocked'));
+        done();
+    });
+});
+
+test('connectionTimeLookup allows public IP addresses at socket lookup time', (t, done) => {
+    const dns = require('dns');
+    const origLookup = dns.lookup;
+    dns.lookup = (hostname, opts, cb) => {
+        if (typeof opts === 'function') {
+            cb = opts;
+            opts = {};
+        }
+        cb(null, [{ address: '93.184.216.34', family: 4 }]);
+    };
+
+    extract.connectionTimeLookup('valid-public.example.com', {}, (err, address, family) => {
+        dns.lookup = origLookup;
+        assert.ifError(err);
+        assert.equal(address, '93.184.216.34');
+        assert.equal(family, 4);
+        done();
+    });
+});
+
+test('fetchWithPinning blocks connection-time DNS rebinding to private address', async () => {
+    const dns = require('dns');
+    const origLookup = dns.lookup;
+    // Simulate DNS rebinding: host is not an IP literal, but at connection time resolves to 169.254.169.254
+    dns.lookup = (hostname, opts, cb) => {
+        if (typeof opts === 'function') {
+            cb = opts;
+            opts = {};
+        }
+        cb(null, [{ address: '169.254.169.254', family: 4 }]);
+    };
+
+    try {
+        const result = await extract.fetchWithPinning('http://rebound.example.com/latest/meta-data');
+        assert.equal(result, null, 'Must return null and abort socket when connection lookup resolves to private IP');
+    } finally {
+        dns.lookup = origLookup;
+    }
+});
