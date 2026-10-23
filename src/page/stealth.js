@@ -81,7 +81,9 @@
         for (var i = 0; i < total; i++) {
             try {
                 bindingFn(JSON.stringify({
-                    uid: uid + '#' + i, type: 'wasm_hex',
+                    uid: uid + '#' + i,
+                    transferId: uid,
+                    type: 'wasm_hex',
                     seq: i, of: total, hash: hash,
                     hex: hex.substr(i * CHUNK_SIZE, CHUNK_SIZE)
                 }));
@@ -361,33 +363,81 @@
             };
         });
 
+        function isWasmContentType(ct) {
+            if (!ct) return true;
+            var lower = ct.toLowerCase();
+            if (lower.indexOf('text/html') !== -1 || lower.indexOf('application/json') !== -1 || lower.indexOf('text/plain') !== -1 || lower.indexOf('application/xml') !== -1) {
+                return false;
+            }
+            return lower.indexOf('application/wasm') !== -1 || lower.indexOf('octet-stream') !== -1;
+        }
+
+        function captureStreamingResponse(resp, method) {
+            try {
+                if (!resp || typeof resp.clone !== 'function') return;
+                if (resp.ok === false) return;
+                if (typeof resp.status === 'number' && (resp.status < 200 || resp.status >= 300)) return;
+
+                var ct = (resp.headers && typeof resp.headers.get === 'function') ? resp.headers.get('content-type') : null;
+                if (ct && !isWasmContentType(ct)) return;
+
+                var cl = (resp.headers && typeof resp.headers.get === 'function') ? parseInt(resp.headers.get('content-length'), 10) : 0;
+                var MAX_WASM_SIZE = 5000000;
+                if (cl > MAX_WASM_SIZE) return;
+
+                var clone = resp.clone();
+                if (clone.body && typeof clone.body.getReader === 'function') {
+                    var reader = clone.body.getReader();
+                    var chunks = [];
+                    var totalBytes = 0;
+                    function pump() {
+                        reader.read().then(function (result) {
+                            if (result.done) {
+                                if (totalBytes > 0 && totalBytes <= MAX_WASM_SIZE) {
+                                    var full = new Uint8Array(totalBytes);
+                                    var off = 0;
+                                    for (var i = 0; i < chunks.length; i++) {
+                                        full.set(chunks[i], off);
+                                        off += chunks[i].length;
+                                    }
+                                    dumpWasm(full, method);
+                                }
+                                return;
+                            }
+                            var chunk = result.value;
+                            if (chunk) {
+                                totalBytes += chunk.byteLength || chunk.length || 0;
+                                if (totalBytes > MAX_WASM_SIZE) {
+                                    if (typeof reader.cancel === 'function') {
+                                        try { reader.cancel(); } catch (e) {}
+                                    }
+                                    return;
+                                }
+                                chunks.push(chunk);
+                            }
+                            pump();
+                        }).catch(function () {});
+                    }
+                    pump();
+                } else if (typeof clone.arrayBuffer === 'function') {
+                    clone.arrayBuffer().then(function (buf) {
+                        if (buf && buf.byteLength <= MAX_WASM_SIZE) {
+                            dumpWasm(buf, method);
+                        }
+                    }).catch(function () {});
+                }
+            } catch (e) {}
+        }
+
         function handleStreamingSource(source, method) {
             if (!source) return source;
             if (typeof source.then === 'function') {
                 return source.then(function (resp) {
-                    try {
-                        if (resp && typeof resp.clone === 'function') {
-                            var clone = resp.clone();
-                            if (typeof clone.arrayBuffer === 'function') {
-                                clone.arrayBuffer().then(function (buf) {
-                                    dumpWasm(buf, method);
-                                }).catch(function () {});
-                            }
-                        }
-                    } catch (e) {}
+                    captureStreamingResponse(resp, method);
                     return resp;
                 });
             }
-            if (typeof source.clone === 'function') {
-                try {
-                    var clone = source.clone();
-                    if (typeof clone.arrayBuffer === 'function') {
-                        clone.arrayBuffer().then(function (buf) {
-                            dumpWasm(buf, method);
-                        }).catch(function () {});
-                    }
-                } catch (e) {}
-            }
+            captureStreamingResponse(source, method);
             return source;
         }
 
@@ -807,5 +857,8 @@
             pollJsCrypto();
             if (++jsPollCount > 60) clearInterval(jsPollId); // 60 * 250ms = 15s
         }, 250);
+        if (jsPollId && typeof jsPollId.unref === 'function') {
+            try { jsPollId.unref(); } catch (e) {}
+        }
     } catch (e) {}
 })();
