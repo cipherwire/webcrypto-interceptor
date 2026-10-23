@@ -30,9 +30,9 @@ function createStealthSandbox(customGlobals = {}) {
     const sandbox = {
         console,
         setTimeout,
-        clearTimeout,
+        clearTimeout: globalThis.clearTimeout,
         setInterval,
-        clearInterval,
+        clearInterval: globalThis.clearInterval,
         Uint8Array,
         ArrayBuffer,
         Map,
