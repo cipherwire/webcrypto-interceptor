@@ -102,4 +102,7 @@ Test Environment: Node.js v25.2.1, Windows x64, Chromium (Brave / Chrome headles
 | String Unpack CDP Calls (512) | 512 calls (~1.4s) | 8 calls (~14ms) | 98.4% IPC reduction |
 | Sourcemaps without inline comment | Missed | Recovered | Full Coverage |
 | E2E Test Assertion Coverage | Browser page eval only | Page + CDP + Logs on disk | Full End-to-End |
-| Total Passing Unit Tests | 96 tests | 100 tests | +4 tests (Zero regressions) |
+| Total Passing Unit Tests | 96 tests | 108 tests | +12 tests (Zero regressions) |
+
+> [!NOTE]
+> In `.github/workflows/ci.yml`, macOS runners explicitly set `SKIP_E2E=1` because headless Chromium binary resolution is non-deterministic in hosted macOS runners without pre-installed browsers. Linux and Windows runners execute the full live Chromium E2E suite, while macOS is verified by the complete 107 unit and integration test suite.

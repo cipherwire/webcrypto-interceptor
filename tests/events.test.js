@@ -5,6 +5,7 @@ const path = require('path');
 const os = require('os');
 const events = require('../src/cdp/events');
 const log = require('../src/util/log');
+const vm = require('vm');
 
 // Route test logs into a temp dir so we never pollute cwd.
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wci-events-'));
@@ -17,33 +18,177 @@ test('stealth.js compiles (syntax guard for browser-injected code)', () => {
     assert.ok(!src.includes('__WCI_PART'), 'no leftover chunk markers');
 });
 
-test('stealth.js WebAssembly hooks handle TypedArray view boundaries correctly', () => {
+const hostGlobals = {
+    fnToString: Function.prototype.toString,
+    globalFn: globalThis.Function,
+    wasmCompile: WebAssembly.compile,
+    setInterval: globalThis.setInterval,
+    fetch: globalThis.fetch
+};
+
+function createStealthSandbox(customGlobals = {}) {
+    const sandbox = {
+        console,
+        setTimeout,
+        clearTimeout: globalThis.clearTimeout,
+        setInterval,
+        clearInterval: globalThis.clearInterval,
+        Uint8Array,
+        ArrayBuffer,
+        Map,
+        Set,
+        WeakMap,
+        Promise,
+        JSON,
+        Math,
+        Date,
+        Proxy,
+        Reflect,
+        WebAssembly: Object.assign({}, WebAssembly),
+        ...customGlobals
+    };
+    sandbox.globalThis = sandbox;
+    sandbox.self = sandbox;
+    return vm.createContext(sandbox);
+}
+
+test('stealth.js WebAssembly hooks handle TypedArray view boundaries correctly in isolated context', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'page', 'stealth.js'), 'utf8');
     const emitted = [];
-    const prevWci = globalThis.__wci;
-    globalThis.__wci = (raw) => {
-        try { emitted.push(JSON.parse(raw)); } catch {}
+    const ctx = createStealthSandbox({
+        __wci: (raw) => {
+            try { emitted.push(JSON.parse(raw)); } catch {}
+        }
+    });
+
+    vm.runInContext(src, ctx);
+
+    // TypedArray view with non-zero byteOffset
+    const backingBuffer = new Uint8Array([0, 1, 2, 3, 4, 5, 6, 7, 0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+    const view = new Uint8Array(backingBuffer.buffer, 8, 8); // offset 8, len 8 (0061736d01000000)
+
+    ctx.WebAssembly.compile(view);
+    const wasmEvt = emitted.find(e => e.type === 'wasm' && e.data && e.data.method === 'compile');
+    assert.ok(wasmEvt, 'wasm compile event emitted');
+    assert.equal(wasmEvt.data.bytes, 8, 'Must capture exact view length (8 bytes), not backing buffer length (16)');
+
+    const hexChunk = emitted.find(e => e.type === 'wasm_hex');
+    assert.ok(hexChunk, 'wasm_hex chunk emitted');
+    assert.equal(hexChunk.hex, '0061736d01000000', 'Hex must match view bytes starting at byteOffset');
+    assert.ok(hexChunk.transferId, 'transferId must be populated in chunk envelope');
+});
+
+test('stealth.js streaming capture ignores non-ok responses and non-wasm content-types in isolated context', async () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'page', 'stealth.js'), 'utf8');
+    const emitted = [];
+    const ctx = createStealthSandbox({
+        __wci: (raw) => {
+            try { emitted.push(JSON.parse(raw)); } catch {}
+        }
+    });
+
+    vm.runInContext(src, ctx);
+
+    // 1. Non-ok response (404 Not Found)
+    const mock404 = {
+        ok: false,
+        status: 404,
+        headers: new Map([['content-type', 'application/wasm']]),
+        clone() { return this; }
+    };
+    try { await ctx.WebAssembly.compileStreaming(Promise.resolve(mock404)); } catch {}
+
+    // 2. Non-WASM content type (HTML error page)
+    const mockHtml = {
+        ok: true,
+        status: 200,
+        headers: new Map([['content-type', 'text/html; charset=utf-8']]),
+        clone() { return this; }
+    };
+    try { await ctx.WebAssembly.compileStreaming(Promise.resolve(mockHtml)); } catch {}
+
+    await new Promise(r => setTimeout(r, 15));
+    assert.equal(emitted.filter(e => e.type === 'wasm').length, 0, 'Must not dump 404 or text/html as WASM');
+});
+
+test('stealth.js streaming capture reads chunks and enforces 5MB limit in isolated context', async () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'page', 'stealth.js'), 'utf8');
+    const emitted = [];
+    const ctx = createStealthSandbox({
+        __wci: (raw) => {
+            try { emitted.push(JSON.parse(raw)); } catch {}
+        }
+    });
+
+    vm.runInContext(src, ctx);
+
+    // 1. Valid small stream using ReadableStream reader
+    const wasmHeader = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+    let readIdx = 0;
+    const validReader = {
+        read() {
+            if (readIdx === 0) {
+                readIdx++;
+                return Promise.resolve({ done: false, value: wasmHeader });
+            }
+            return Promise.resolve({ done: true });
+        }
+    };
+    const mockValid = {
+        ok: true,
+        status: 200,
+        headers: new Map([['content-type', 'application/wasm']]),
+        clone() {
+            return { body: { getReader() { return validReader; } } };
+        }
     };
 
-    try {
-        new Function(src)();
+    try { await ctx.WebAssembly.compileStreaming(Promise.resolve(mockValid)); } catch {}
+    await new Promise(r => setTimeout(r, 20));
 
-        // TypedArray view with non-zero byteOffset
-        const backingBuffer = new Uint8Array([0, 1, 2, 3, 4, 5, 6, 7, 0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
-        const view = new Uint8Array(backingBuffer.buffer, 8, 8); // offset 8, len 8 (0061736d01000000)
+    const dumped = emitted.find(e => e.type === 'wasm_hex');
+    assert.ok(dumped, 'Streaming chunks must be captured and dumped');
+    assert.equal(dumped.hex, '0061736d01000000');
 
-        WebAssembly.compile(view);
-        const wasmEvt = emitted.find(e => e.type === 'wasm' && e.data && e.data.method === 'compile');
-        assert.ok(wasmEvt, 'wasm compile event emitted');
-        assert.equal(wasmEvt.data.bytes, 8, 'Must capture exact view length (8 bytes), not backing buffer length (16)');
+    // 2. Oversized stream: chunks exceed 5MB -> reader cancelled and not dumped
+    let cancelled = false;
+    const largeChunk = new Uint8Array(3 * 1024 * 1024); // 3MB chunk
+    let largeReads = 0;
+    const oversizeReader = {
+        read() {
+            largeReads++;
+            if (largeReads <= 2) {
+                return Promise.resolve({ done: false, value: largeChunk });
+            }
+            return Promise.resolve({ done: true });
+        },
+        cancel() {
+            cancelled = true;
+        }
+    };
+    const mockOversize = {
+        ok: true,
+        status: 200,
+        headers: new Map([['content-type', 'application/wasm']]),
+        clone() {
+            return { body: { getReader() { return oversizeReader; } } };
+        }
+    };
 
-        const hexChunk = emitted.find(e => e.type === 'wasm_hex');
-        assert.ok(hexChunk, 'wasm_hex chunk emitted');
-        assert.equal(hexChunk.hex, '0061736d01000000', 'Hex must match view bytes starting at byteOffset');
-    } finally {
-        if (prevWci !== undefined) globalThis.__wci = prevWci;
-        else delete globalThis.__wci;
-    }
+    emitted.length = 0;
+    try { await ctx.WebAssembly.compileStreaming(Promise.resolve(mockOversize)); } catch {}
+    await new Promise(r => setTimeout(r, 20));
+
+    assert.equal(cancelled, true, 'Reader must be cancelled once 5MB threshold is exceeded');
+    assert.equal(emitted.filter(e => e.type === 'wasm_hex').length, 0, 'Oversized wasm must not be dumped');
+});
+
+test('stealth.js test isolation: host environment globals are never modified by stealth execution', () => {
+    assert.equal(Function.prototype.toString, hostGlobals.fnToString, 'Function.prototype.toString must remain pristine');
+    assert.equal(globalThis.Function, hostGlobals.globalFn, 'globalThis.Function must remain pristine');
+    assert.equal(WebAssembly.compile, hostGlobals.wasmCompile, 'WebAssembly.compile must remain pristine');
+    assert.equal(globalThis.setInterval, hostGlobals.setInterval, 'globalThis.setInterval must remain pristine');
+    assert.equal(globalThis.fetch, hostGlobals.fetch, 'globalThis.fetch must remain pristine');
 });
 
 test('isDuplicate tracks uids', () => {
@@ -72,6 +217,32 @@ test('reassembleChunks reassembles ordered hex chunks including real transport u
     assert.equal(events.reassembleChunks(realChunks[0]), null);
     assert.equal(events.reassembleChunks(realChunks[1]), null);
     assert.equal(events.reassembleChunks(realChunks[2]), '111122223333');
+});
+
+test('reassembleChunks strictly rejects malformed sequences and inconsistent envelopes', () => {
+    // 1. Negative seq
+    assert.equal(events.reassembleChunks({ uid: 'inv1#0', seq: -1, of: 2, hex: 'aa' }), null);
+
+    // 2. Out of bound seq >= of
+    assert.equal(events.reassembleChunks({ uid: 'inv2#2', seq: 2, of: 2, hex: 'aa' }), null);
+
+    // 3. Non-integer seq or of
+    assert.equal(events.reassembleChunks({ uid: 'inv3#0', seq: 0.5, of: 2, hex: 'aa' }), null);
+    assert.equal(events.reassembleChunks({ uid: 'inv4#0', seq: 0, of: '2', hex: 'aa' }), null);
+    assert.equal(events.reassembleChunks({ uid: 'inv5#0', seq: 0, of: 0, hex: 'aa' }), null);
+    assert.equal(events.reassembleChunks({ uid: 'inv6#0', seq: 0, of: 5000, hex: 'aa' }), null);
+
+    // 4. Duplicate chunk does not cause premature assembly
+    assert.equal(events.reassembleChunks({ uid: 'dup#0', seq: 0, of: 2, hex: 'aa' }), null);
+    assert.equal(events.reassembleChunks({ uid: 'dup#0', seq: 0, of: 2, hex: 'aa' }), null);
+    assert.equal(events.reassembleChunks({ uid: 'dup#1', seq: 1, of: 2, hex: 'bb' }), 'aabb');
+
+    // 5. Inconsistent total for same transfer ID is rejected
+    assert.equal(events.reassembleChunks({ uid: 'inc#0', seq: 0, of: 3, hex: '11' }), null);
+    assert.equal(events.reassembleChunks({ uid: 'inc#1', seq: 1, of: 2, hex: '22' }), null);
+
+    // 6. Non-string hex
+    assert.equal(events.reassembleChunks({ uid: 'hex#0', seq: 0, of: 1, hex: 123 }), null);
 });
 
 test('dumpWasmFromHex disambiguates colliding page hashes with content SHA-256', () => {

@@ -59,8 +59,10 @@ async function unpackStrings(cdpSession, decoderExpr, options = {}) {
             continue;
         }
 
-        // Batched evaluation: probe a chunk in a single CDP round-trip
-        const expr = `/*wci:str_batch*/(function(){ var res = {}; var fn; try { fn = (${decoderExpr}); } catch(e) { return res; } if (typeof fn !== 'function') return res; for (var i = ${batchStart}; i < ${batchEnd}; i++) { try { var v = fn(i${extraArgsSuffix}); if (typeof v === 'string') res[i] = v; } catch(e) {} } return res; })()`;
+        // Batched evaluation: probe a chunk in a single CDP round-trip, enforcing
+        // early termination and preserving method receiver (this) context inside browser V8.
+        const alreadyFound = Object.keys(decoded).length > 0;
+        const expr = `/*wci:str_batch*/(function(){ var res = {}; var probed = 0; var consec = ${consecutiveErrors}; var foundAny = ${alreadyFound}; for (var i = ${batchStart}; i < ${batchEnd}; i++) { probed++; var val = null; try { val = (${decoderExpr})(i${extraArgsSuffix}); } catch (e) {} if (typeof val === 'string') { res[String(i)] = val; consec = 0; foundAny = true; } else { consec++; } if (consec >= ${maxConsecutiveErrors} && foundAny) { break; } } return { res: res, probed: probed, stopped: (consec >= ${maxConsecutiveErrors} && foundAny), consec: consec }; })()`;
 
         let batchRes = null;
         try {
@@ -77,24 +79,24 @@ async function unpackStrings(cdpSession, decoderExpr, options = {}) {
             batchRes = null;
         }
 
-        let earlyStop = false;
-        for (let i = batchStart; i < batchEnd; i++) {
-            probedCount++;
-            const strVal = batchRes && batchRes[i];
-            if (typeof strVal === 'string') {
-                decoded[String(i)] = strVal;
-                consecutiveErrors = 0;
-            } else {
-                consecutiveErrors++;
+        if (batchRes && typeof batchRes.probed === 'number') {
+            if (batchRes.res && typeof batchRes.res === 'object') {
+                Object.assign(decoded, batchRes.res);
             }
-
+            probedCount += batchRes.probed;
+            consecutiveErrors = typeof batchRes.consec === 'number' ? batchRes.consec : consecutiveErrors;
+            if (batchRes.stopped) {
+                break;
+            }
+        } else {
+            // Evaluation failed or returned unexpected shape
+            const chunkLen = batchEnd - batchStart;
+            probedCount += chunkLen;
+            consecutiveErrors += chunkLen;
             if (consecutiveErrors >= maxConsecutiveErrors && Object.keys(decoded).length > 0) {
-                earlyStop = true;
                 break;
             }
         }
-
-        if (earlyStop) break;
     }
 
     return {

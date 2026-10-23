@@ -1,3 +1,8 @@
+const http = require('http');
+const https = require('https');
+const dnsCallback = require('dns');
+const dns = dnsCallback.promises;
+const net = require('net');
 // --full mode: dump every script source and response body seen on the page
 // to disk, mirroring each URL's own path - a poor-man's "save whole site".
 const fs = require('fs');
@@ -224,6 +229,261 @@ function unpackSourcemap(mapData, baseUrl, targetDir) {
     return count;
 }
 
+function isDisallowedHost(hostname) {
+    if (!hostname || typeof hostname !== 'string') return true;
+    let host = hostname.toLowerCase().replace(/^\[|\]$/g, '').trim();
+    if (host === 'localhost' || host === '0.0.0.0' || host === '::' || host === '::1') return true;
+    if (host === 'metadata.google.internal') return true;
+
+    // Check IPv4-mapped IPv6: ::ffff:127.0.0.1 or ::ffff:7f00:1
+    if (host.startsWith('::ffff:')) {
+        const v4Part = host.slice(7);
+        if (v4Part.includes('.')) {
+            return isDisallowedHost(v4Part);
+        }
+        const hexParts = v4Part.split(':');
+        if (hexParts.length === 2) {
+            const hi = parseInt(hexParts[0], 16);
+            const lo = parseInt(hexParts[1], 16);
+            if (!isNaN(hi) && !isNaN(lo)) {
+                return isDisallowedHost(`${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`);
+            }
+        }
+    }
+
+    // Normalize potential numeric, octal, hex, or short IP representations using WHATWG parser
+    try {
+        const dummy = new URL('http://' + (host.includes(':') ? `[${host}]` : host));
+        host = dummy.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+    } catch (e) {}
+
+    if (host === 'localhost' || host === '0.0.0.0' || host === '::' || host === '::1') return true;
+
+    // IPv4 check
+    const parts = host.split('.');
+    if (parts.length === 4 && parts.every(p => /^\d+$/.test(p) && Number(p) >= 0 && Number(p) <= 255)) {
+        const b0 = Number(parts[0]);
+        const b1 = Number(parts[1]);
+        if (b0 === 127) return true; // 127.0.0.0/8 loopback
+        if (b0 === 10) return true;  // 10.0.0.0/8 private
+        if (b0 === 169 && b1 === 254) return true; // 169.254.0.0/16 link-local metadata
+        if (b0 === 192 && b1 === 168) return true; // 192.168.0.0/16 private
+        if (b0 === 172 && b1 >= 16 && b1 <= 31) return true; // 172.16.0.0/12 private
+        if (b0 === 0) return true;
+    }
+
+    // IPv6 check
+    if (host.includes(':')) {
+        if (/^fe[89ab]/i.test(host)) return true; // fe80::/10 link-local
+        if (/^f[cd]/i.test(host)) return true;   // fc00::/7 unique local
+    }
+
+    return false;
+}
+
+async function isDisallowedDns(hostname) {
+    if (!hostname || typeof hostname !== 'string') return true;
+    const cleanHost = hostname.toLowerCase().replace(/^\[|\]$/g, '').trim();
+    if (net.isIP(cleanHost)) {
+        return isDisallowedHost(cleanHost);
+    }
+    if (isDisallowedHost(cleanHost)) {
+        return true;
+    }
+    try {
+        const addresses = await dns.lookup(cleanHost, { all: true });
+        if (!addresses || !addresses.length) return true;
+        for (const addr of addresses) {
+            if (isDisallowedHost(addr.address)) {
+                return true;
+            }
+        }
+    } catch (e) {
+        return true;
+    }
+    return false;
+}
+
+const nativeFetch = globalThis.fetch;
+
+function connectionTimeLookup(hostname, options, callback) {
+    dnsCallback.lookup(hostname, { all: true }, (err, addresses) => {
+        if (err) return callback(err);
+        if (!addresses || !addresses.length) {
+            return callback(new Error('DNS resolution returned no addresses'));
+        }
+        for (const addr of addresses) {
+            if (isDisallowedHost(addr.address)) {
+                return callback(new Error('Connection-time SSRF blocked: IP ' + addr.address + ' is in a disallowed range'));
+            }
+        }
+        const chosen = addresses[0];
+        if (options && options.all) {
+            callback(null, [chosen]);
+        } else {
+            callback(null, chosen.address, chosen.family);
+        }
+    });
+}
+
+async function fetchWithMockWrapper(urlStr, maxRedirects, timeoutMs, maxBytes) {
+    let currentUrl = urlStr;
+    for (let hop = 0; hop <= maxRedirects; hop++) {
+        let urlObj;
+        try {
+            urlObj = new URL(currentUrl);
+        } catch (e) { return null; }
+
+        if (urlObj.protocol !== 'http:' && urlObj.protocol !== 'https:') return null;
+        if (isDisallowedHost(urlObj.hostname)) return null;
+        if (await isDisallowedDns(urlObj.hostname)) return null;
+
+        let resp;
+        try {
+            resp = await globalThis.fetch(urlObj.href, {
+                redirect: 'manual',
+                signal: AbortSignal.timeout(timeoutMs)
+            });
+        } catch (e) { return null; }
+
+        if (!resp) return null;
+
+        if (resp.status >= 300 && resp.status < 400) {
+            const loc = resp.headers && resp.headers.get ? resp.headers.get('location') : null;
+            if (!loc) return null;
+            try {
+                currentUrl = new URL(loc, urlObj.href).href;
+            } catch (e) { return null; }
+            continue;
+        }
+
+        if (!resp.ok) return null;
+
+        const cl = resp.headers && resp.headers.get ? resp.headers.get('content-length') : null;
+        if (cl && parseInt(cl, 10) > maxBytes) return null;
+
+        let textVal = '';
+        if (typeof resp.text === 'function') {
+            textVal = await resp.text();
+            if (Buffer.byteLength(textVal) > maxBytes) return null;
+        } else if (typeof resp.arrayBuffer === 'function') {
+            const buf = await resp.arrayBuffer();
+            if (buf.byteLength > maxBytes) return null;
+            textVal = Buffer.from(buf).toString('utf8');
+        }
+
+        return {
+            status: resp.status,
+            finalUrl: urlObj.href,
+            headers: resp.headers,
+            text: () => textVal,
+            buffer: () => Buffer.from(textVal)
+        };
+    }
+    return null;
+}
+
+function fetchWithPinning(urlStr, maxRedirects = 3, timeoutMs = 5000, maxBytes = 10 * 1024 * 1024) {
+    if (typeof globalThis.fetch === 'function' && globalThis.fetch !== nativeFetch) {
+        return fetchWithMockWrapper(urlStr, maxRedirects, timeoutMs, maxBytes);
+    }
+
+    return new Promise((resolve) => {
+        let currentUrl;
+        try {
+            currentUrl = new URL(urlStr);
+        } catch (e) {
+            return resolve(null);
+        }
+
+        if (currentUrl.protocol !== 'http:' && currentUrl.protocol !== 'https:') return resolve(null);
+        if (isDisallowedHost(currentUrl.hostname)) return resolve(null);
+
+        const isHttps = currentUrl.protocol === 'https:';
+        const client = isHttps ? https : http;
+
+        const reqOptions = {
+            protocol: currentUrl.protocol,
+            hostname: currentUrl.hostname,
+            port: currentUrl.port || (isHttps ? 443 : 80),
+            path: currentUrl.pathname + currentUrl.search,
+            method: 'GET',
+            headers: {
+                'User-Agent': 'webcrypto-interceptor/sourcemap',
+                'Accept': 'application/json, */*'
+            },
+            lookup: connectionTimeLookup,
+            timeout: timeoutMs
+        };
+
+        if (isHttps) {
+            reqOptions.servername = currentUrl.hostname;
+        }
+
+        let req;
+        try {
+            req = client.request(reqOptions, (res) => {
+                if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                    res.resume();
+                    if (maxRedirects <= 0) return resolve(null);
+                    let nextUrl;
+                    try {
+                        nextUrl = new URL(res.headers.location, currentUrl).href;
+                    } catch (e) {
+                        return resolve(null);
+                    }
+                    return resolve(fetchWithPinning(nextUrl, maxRedirects - 1, timeoutMs, maxBytes));
+                }
+
+                if (res.statusCode < 200 || res.statusCode >= 300) {
+                    res.resume();
+                    return resolve(null);
+                }
+
+                const cl = res.headers['content-length'];
+                if (cl && parseInt(cl, 10) > maxBytes) {
+                    res.destroy();
+                    return resolve(null);
+                }
+
+                const chunks = [];
+                let totalBytes = 0;
+                res.on('data', (chunk) => {
+                    totalBytes += chunk.length;
+                    if (totalBytes > maxBytes) {
+                        res.destroy();
+                        return resolve(null);
+                    }
+                    chunks.push(chunk);
+                });
+                res.on('end', () => {
+                    const bodyBuf = Buffer.concat(chunks);
+                    resolve({
+                        status: res.statusCode,
+                        finalUrl: currentUrl.href,
+                        headers: res.headers,
+                        text: () => bodyBuf.toString('utf8'),
+                        buffer: () => bodyBuf
+                    });
+                });
+            });
+        } catch (e) {
+            return resolve(null);
+        }
+
+        req.on('timeout', () => {
+            req.destroy();
+            resolve(null);
+        });
+
+        req.on('error', () => {
+            resolve(null);
+        });
+
+        req.end();
+    });
+}
+
 async function handleSourcemap(url, content, explicitSourceMapUrl) {
     if (!extractDir) return;
     const text = Buffer.isBuffer(content) ? content.toString('utf8') : String(content || '');
@@ -238,8 +498,10 @@ async function handleSourcemap(url, content, explicitSourceMapUrl) {
     if (!mapRef) return;
 
     let mapJson = null;
+    const MAX_MAP_SIZE = 10 * 1024 * 1024; // 10MB memory limit
     if (mapRef.startsWith('data:')) {
         try {
+            if (mapRef.length > MAX_MAP_SIZE) return;
             if (mapRef.includes('base64,')) {
                 mapJson = Buffer.from(mapRef.split('base64,')[1], 'base64').toString('utf8');
             } else if (mapRef.includes(',')) {
@@ -248,19 +510,23 @@ async function handleSourcemap(url, content, explicitSourceMapUrl) {
         } catch (e) { return; }
     } else {
         if (!url || !/^https?:\/\//i.test(url)) return;
-        let mapUrl;
+        let mapUrlObj;
         try {
-            mapUrl = new URL(mapRef, url).href;
+            mapUrlObj = new URL(mapRef, url);
         } catch (e) { return; }
 
+        if (mapUrlObj.protocol !== 'http:' && mapUrlObj.protocol !== 'https:') return;
+        if (isDisallowedHost(mapUrlObj.hostname)) return;
+
+        let mapUrl = mapUrlObj.href;
         if (seenMaps.has(mapUrl)) return;
         seenMaps.add(mapUrl);
 
         try {
-            const resp = await fetch(mapUrl, { signal: AbortSignal.timeout(5000) });
-            if (!resp.ok) return;
-            mapJson = await resp.text();
-            saveFile(mapUrl, mapJson);
+            const fetched = await fetchWithPinning(mapUrlObj.href);
+            if (!fetched) return;
+            mapJson = fetched.text();
+            saveFile(fetched.finalUrl || mapUrl, mapJson);
         } catch (e) { return; }
     }
 
@@ -297,5 +563,9 @@ module.exports = {
     cleanSourcePath,
     unpackSourcemap,
     handleSourcemap,
+    isDisallowedHost,
+    isDisallowedDns,
+    connectionTimeLookup,
+    fetchWithPinning,
     resetExtractState
 };

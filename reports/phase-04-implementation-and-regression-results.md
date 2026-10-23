@@ -58,16 +58,16 @@ All Tests: 100 passing, 0 failing, 0 skipped
 | `tests/cli.test.js` | 15 | Pass | ~5.8ms |
 | `tests/decoders.test.js` | 19 | Pass | ~6.5ms |
 | `tests/e2e.test.js` | 1 | Pass | ~1,250ms |
-| `tests/events.test.js` | 9 | Pass | ~22.0ms |
+| `tests/events.test.js` | 12 | Pass | ~105ms |
 | `tests/extract-keys.test.js` | 6 | Pass | ~2.5ms |
-| `tests/extract-paths.test.js` | 15 | Pass | ~46.0ms |
+| `tests/extract-paths.test.js` | 18 | Pass | ~61ms |
 | `tests/heapdiff.test.js` | 5 | Pass | ~4.8ms |
 | `tests/log.test.js` | 7 | Pass | ~18.0ms |
 | `tests/secrets.test.js` | 8 | Pass | ~4.5ms |
-| `tests/strings.test.js` | 3 | Pass | ~4.8ms |
+| `tests/strings.test.js` | 5 | Pass | ~5.8ms |
 | `tests/verify_reimpl.test.js` | 7 | Pass | ~2.0ms |
 | `tests/vm.test.js` | 3 | Pass | ~4.2ms |
-| **Total** | **100** | **100 Pass, 0 Fail** | **~1.4s** |
+| **Total** | **108** | **108 Pass, 0 Fail** | **~1.3s** |
 
 ### Code Quality and Security Gates
 - **ESLint**: 0 errors, 0 warnings across all 41 JavaScript files (`npm run lint`).
