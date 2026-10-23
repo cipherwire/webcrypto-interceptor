@@ -5,6 +5,7 @@ const path = require('path');
 const os = require('os');
 const events = require('../src/cdp/events');
 const log = require('../src/util/log');
+const vm = require('vm');
 
 // Route test logs into a temp dir so we never pollute cwd.
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wci-events-'));
@@ -17,180 +18,177 @@ test('stealth.js compiles (syntax guard for browser-injected code)', () => {
     assert.ok(!src.includes('__WCI_PART'), 'no leftover chunk markers');
 });
 
-test('stealth.js WebAssembly hooks handle TypedArray view boundaries correctly and restore cleanly', () => {
+const hostGlobals = {
+    fnToString: Function.prototype.toString,
+    globalFn: globalThis.Function,
+    wasmCompile: WebAssembly.compile,
+    setInterval: globalThis.setInterval,
+    fetch: globalThis.fetch
+};
+
+function createStealthSandbox(customGlobals = {}) {
+    const sandbox = {
+        console,
+        setTimeout,
+        clearTimeout,
+        setInterval,
+        clearInterval,
+        Uint8Array,
+        ArrayBuffer,
+        Map,
+        Set,
+        WeakMap,
+        Promise,
+        JSON,
+        Math,
+        Date,
+        Proxy,
+        Reflect,
+        WebAssembly: Object.assign({}, WebAssembly),
+        ...customGlobals
+    };
+    sandbox.globalThis = sandbox;
+    sandbox.self = sandbox;
+    return vm.createContext(sandbox);
+}
+
+test('stealth.js WebAssembly hooks handle TypedArray view boundaries correctly in isolated context', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'page', 'stealth.js'), 'utf8');
     const emitted = [];
-    const prevWci = globalThis.__wci;
-    const origWasm = {
-        compile: WebAssembly.compile,
-        instantiate: WebAssembly.instantiate,
-        compileStreaming: WebAssembly.compileStreaming,
-        instantiateStreaming: WebAssembly.instantiateStreaming
-    };
-    globalThis.__wci = (raw) => {
-        try { emitted.push(JSON.parse(raw)); } catch {}
-    };
+    const ctx = createStealthSandbox({
+        __wci: (raw) => {
+            try { emitted.push(JSON.parse(raw)); } catch {}
+        }
+    });
 
-    try {
-        new Function(src)();
+    vm.runInContext(src, ctx);
 
-        // TypedArray view with non-zero byteOffset
-        const backingBuffer = new Uint8Array([0, 1, 2, 3, 4, 5, 6, 7, 0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
-        const view = new Uint8Array(backingBuffer.buffer, 8, 8); // offset 8, len 8 (0061736d01000000)
+    // TypedArray view with non-zero byteOffset
+    const backingBuffer = new Uint8Array([0, 1, 2, 3, 4, 5, 6, 7, 0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+    const view = new Uint8Array(backingBuffer.buffer, 8, 8); // offset 8, len 8 (0061736d01000000)
 
-        WebAssembly.compile(view);
-        const wasmEvt = emitted.find(e => e.type === 'wasm' && e.data && e.data.method === 'compile');
-        assert.ok(wasmEvt, 'wasm compile event emitted');
-        assert.equal(wasmEvt.data.bytes, 8, 'Must capture exact view length (8 bytes), not backing buffer length (16)');
+    ctx.WebAssembly.compile(view);
+    const wasmEvt = emitted.find(e => e.type === 'wasm' && e.data && e.data.method === 'compile');
+    assert.ok(wasmEvt, 'wasm compile event emitted');
+    assert.equal(wasmEvt.data.bytes, 8, 'Must capture exact view length (8 bytes), not backing buffer length (16)');
 
-        const hexChunk = emitted.find(e => e.type === 'wasm_hex');
-        assert.ok(hexChunk, 'wasm_hex chunk emitted');
-        assert.equal(hexChunk.hex, '0061736d01000000', 'Hex must match view bytes starting at byteOffset');
-        assert.ok(hexChunk.transferId, 'transferId must be populated in chunk envelope');
-    } finally {
-        if (prevWci !== undefined) globalThis.__wci = prevWci;
-        else delete globalThis.__wci;
-        WebAssembly.compile = origWasm.compile;
-        WebAssembly.instantiate = origWasm.instantiate;
-        WebAssembly.compileStreaming = origWasm.compileStreaming;
-        WebAssembly.instantiateStreaming = origWasm.instantiateStreaming;
-    }
-    assert.equal(WebAssembly.compile, origWasm.compile, 'WebAssembly globals must be restored cleanly');
+    const hexChunk = emitted.find(e => e.type === 'wasm_hex');
+    assert.ok(hexChunk, 'wasm_hex chunk emitted');
+    assert.equal(hexChunk.hex, '0061736d01000000', 'Hex must match view bytes starting at byteOffset');
+    assert.ok(hexChunk.transferId, 'transferId must be populated in chunk envelope');
 });
 
-test('stealth.js streaming capture ignores non-ok responses and non-wasm content-types', async () => {
+test('stealth.js streaming capture ignores non-ok responses and non-wasm content-types in isolated context', async () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'page', 'stealth.js'), 'utf8');
     const emitted = [];
-    const prevWci = globalThis.__wci;
-    const origWasm = {
-        compile: WebAssembly.compile,
-        instantiate: WebAssembly.instantiate,
-        compileStreaming: WebAssembly.compileStreaming,
-        instantiateStreaming: WebAssembly.instantiateStreaming
+    const ctx = createStealthSandbox({
+        __wci: (raw) => {
+            try { emitted.push(JSON.parse(raw)); } catch {}
+        }
+    });
+
+    vm.runInContext(src, ctx);
+
+    // 1. Non-ok response (404 Not Found)
+    const mock404 = {
+        ok: false,
+        status: 404,
+        headers: new Map([['content-type', 'application/wasm']]),
+        clone() { return this; }
     };
-    globalThis.__wci = (raw) => {
-        try { emitted.push(JSON.parse(raw)); } catch {}
+    try { await ctx.WebAssembly.compileStreaming(Promise.resolve(mock404)); } catch {}
+
+    // 2. Non-WASM content type (HTML error page)
+    const mockHtml = {
+        ok: true,
+        status: 200,
+        headers: new Map([['content-type', 'text/html; charset=utf-8']]),
+        clone() { return this; }
     };
+    try { await ctx.WebAssembly.compileStreaming(Promise.resolve(mockHtml)); } catch {}
 
-    try {
-        new Function(src)();
-
-        // 1. Non-ok response (404 Not Found)
-        const mock404 = {
-            ok: false,
-            status: 404,
-            headers: new Map([['content-type', 'application/wasm']]),
-            clone() { return this; }
-        };
-        try { await WebAssembly.compileStreaming(Promise.resolve(mock404)); } catch {}
-
-        // 2. Non-WASM content type (HTML error page)
-        const mockHtml = {
-            ok: true,
-            status: 200,
-            headers: new Map([['content-type', 'text/html; charset=utf-8']]),
-            clone() { return this; }
-        };
-        try { await WebAssembly.compileStreaming(Promise.resolve(mockHtml)); } catch {}
-
-        // Wait microtasks for promises to settle
-        await new Promise(r => setTimeout(r, 10));
-
-        assert.equal(emitted.filter(e => e.type === 'wasm').length, 0, 'Must not dump 404 or text/html as WASM');
-    } finally {
-        if (prevWci !== undefined) globalThis.__wci = prevWci;
-        else delete globalThis.__wci;
-        WebAssembly.compile = origWasm.compile;
-        WebAssembly.instantiate = origWasm.instantiate;
-        WebAssembly.compileStreaming = origWasm.compileStreaming;
-        WebAssembly.instantiateStreaming = origWasm.instantiateStreaming;
-    }
+    await new Promise(r => setTimeout(r, 15));
+    assert.equal(emitted.filter(e => e.type === 'wasm').length, 0, 'Must not dump 404 or text/html as WASM');
 });
 
-test('stealth.js streaming capture reads chunks and enforces 5MB limit', async () => {
+test('stealth.js streaming capture reads chunks and enforces 5MB limit in isolated context', async () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'page', 'stealth.js'), 'utf8');
     const emitted = [];
-    const prevWci = globalThis.__wci;
-    const origWasm = {
-        compile: WebAssembly.compile,
-        instantiate: WebAssembly.instantiate,
-        compileStreaming: WebAssembly.compileStreaming,
-        instantiateStreaming: WebAssembly.instantiateStreaming
+    const ctx = createStealthSandbox({
+        __wci: (raw) => {
+            try { emitted.push(JSON.parse(raw)); } catch {}
+        }
+    });
+
+    vm.runInContext(src, ctx);
+
+    // 1. Valid small stream using ReadableStream reader
+    const wasmHeader = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+    let readIdx = 0;
+    const validReader = {
+        read() {
+            if (readIdx === 0) {
+                readIdx++;
+                return Promise.resolve({ done: false, value: wasmHeader });
+            }
+            return Promise.resolve({ done: true });
+        }
     };
-    globalThis.__wci = (raw) => {
-        try { emitted.push(JSON.parse(raw)); } catch {}
+    const mockValid = {
+        ok: true,
+        status: 200,
+        headers: new Map([['content-type', 'application/wasm']]),
+        clone() {
+            return { body: { getReader() { return validReader; } } };
+        }
     };
 
-    try {
-        new Function(src)();
+    try { await ctx.WebAssembly.compileStreaming(Promise.resolve(mockValid)); } catch {}
+    await new Promise(r => setTimeout(r, 20));
 
-        // 1. Valid small stream using ReadableStream reader
-        const wasmHeader = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
-        let readIdx = 0;
-        const validReader = {
-            read() {
-                if (readIdx === 0) {
-                    readIdx++;
-                    return Promise.resolve({ done: false, value: wasmHeader });
-                }
-                return Promise.resolve({ done: true });
+    const dumped = emitted.find(e => e.type === 'wasm_hex');
+    assert.ok(dumped, 'Streaming chunks must be captured and dumped');
+    assert.equal(dumped.hex, '0061736d01000000');
+
+    // 2. Oversized stream: chunks exceed 5MB -> reader cancelled and not dumped
+    let cancelled = false;
+    const largeChunk = new Uint8Array(3 * 1024 * 1024); // 3MB chunk
+    let largeReads = 0;
+    const oversizeReader = {
+        read() {
+            largeReads++;
+            if (largeReads <= 2) {
+                return Promise.resolve({ done: false, value: largeChunk });
             }
-        };
-        const mockValid = {
-            ok: true,
-            status: 200,
-            headers: new Map([['content-type', 'application/wasm']]),
-            clone() {
-                return { body: { getReader() { return validReader; } } };
-            }
-        };
+            return Promise.resolve({ done: true });
+        },
+        cancel() {
+            cancelled = true;
+        }
+    };
+    const mockOversize = {
+        ok: true,
+        status: 200,
+        headers: new Map([['content-type', 'application/wasm']]),
+        clone() {
+            return { body: { getReader() { return oversizeReader; } } };
+        }
+    };
 
-        try { await WebAssembly.compileStreaming(Promise.resolve(mockValid)); } catch {}
-        await new Promise(r => setTimeout(r, 20));
+    emitted.length = 0;
+    try { await ctx.WebAssembly.compileStreaming(Promise.resolve(mockOversize)); } catch {}
+    await new Promise(r => setTimeout(r, 20));
 
-        const dumped = emitted.find(e => e.type === 'wasm_hex');
-        assert.ok(dumped, 'Streaming chunks must be captured and dumped');
-        assert.equal(dumped.hex, '0061736d01000000');
+    assert.equal(cancelled, true, 'Reader must be cancelled once 5MB threshold is exceeded');
+    assert.equal(emitted.filter(e => e.type === 'wasm_hex').length, 0, 'Oversized wasm must not be dumped');
+});
 
-        // 2. Oversized stream: chunks exceed 5MB -> reader cancelled and not dumped
-        let cancelled = false;
-        const largeChunk = new Uint8Array(3 * 1024 * 1024); // 3MB chunk
-        let largeReads = 0;
-        const oversizeReader = {
-            read() {
-                largeReads++;
-                if (largeReads <= 2) {
-                    return Promise.resolve({ done: false, value: largeChunk });
-                }
-                return Promise.resolve({ done: true });
-            },
-            cancel() {
-                cancelled = true;
-            }
-        };
-        const mockOversize = {
-            ok: true,
-            status: 200,
-            headers: new Map([['content-type', 'application/wasm']]),
-            clone() {
-                return { body: { getReader() { return oversizeReader; } } };
-            }
-        };
-
-        emitted.length = 0;
-        try { await WebAssembly.compileStreaming(Promise.resolve(mockOversize)); } catch {}
-        await new Promise(r => setTimeout(r, 20));
-
-        assert.equal(cancelled, true, 'Reader must be cancelled once 5MB threshold is exceeded');
-        assert.equal(emitted.filter(e => e.type === 'wasm_hex').length, 0, 'Oversized wasm must not be dumped');
-    } finally {
-        if (prevWci !== undefined) globalThis.__wci = prevWci;
-        else delete globalThis.__wci;
-        WebAssembly.compile = origWasm.compile;
-        WebAssembly.instantiate = origWasm.instantiate;
-        WebAssembly.compileStreaming = origWasm.compileStreaming;
-        WebAssembly.instantiateStreaming = origWasm.instantiateStreaming;
-    }
+test('stealth.js test isolation: host environment globals are never modified by stealth execution', () => {
+    assert.equal(Function.prototype.toString, hostGlobals.fnToString, 'Function.prototype.toString must remain pristine');
+    assert.equal(globalThis.Function, hostGlobals.globalFn, 'globalThis.Function must remain pristine');
+    assert.equal(WebAssembly.compile, hostGlobals.wasmCompile, 'WebAssembly.compile must remain pristine');
+    assert.equal(globalThis.setInterval, hostGlobals.setInterval, 'globalThis.setInterval must remain pristine');
+    assert.equal(globalThis.fetch, hostGlobals.fetch, 'globalThis.fetch must remain pristine');
 });
 
 test('isDuplicate tracks uids', () => {
