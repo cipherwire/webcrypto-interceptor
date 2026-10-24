@@ -210,7 +210,11 @@ async function attachNetworkCapture(cdpSession) {
         // be replayed with a one-liner? Signed-but-unencrypted HLS (the
         // dominant streaming-site pattern) is directly fetchable while the
         // token lives; base64-token URIs are resolved server-side only.
-        if (scanText.includes('#EXTM3U')) {
+        // Guarded by URL/content-type: player JS bundles (hls.js) contain the
+        // literal string "#EXTM3U" and must not be mistaken for manifests.
+        const looksLikeManifest = /\.m3u8(\?|$)/i.test(lower) || /\.mpd(\?|$)/i.test(lower)
+            || /mpegurl|dash\+xml/i.test(ctHeader);
+        if (looksLikeManifest && scanText.includes('#EXTM3U')) {
             reportHlsInfo(url, response.status, scanText);
         }
 
