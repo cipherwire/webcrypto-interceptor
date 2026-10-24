@@ -253,6 +253,14 @@ const { resolveBrowserPath } = require('./src/util/browser');
             } else {
                 await childSession.send('Page.setBypassCSP', { enabled: true }).catch(() => {});
                 await childSession.send('Page.addScriptToEvaluateOnNewDocument', { source: hookCode }).catch(() => {});
+                // Also inject into the CURRENT document. This branch also fires
+                // for already-running contexts ('other'/iframe targets attached
+                // mid-flight - e.g. embedded players), where the Page-domain
+                // registration above can never apply retroactively: on such
+                // targets the Page calls fail outright, so without this
+                // evaluate the site code was never wrapped. stealth.js's
+                // __WCI_INJECTED marker makes a double run impossible.
+                await childSession.send('Runtime.evaluate', { expression: hookCode, silent: true }).catch(() => {});
             }
             await applyUaOverride(childSession);
             await attachToSession(childSession, `${type}:${shortUrl(url)}`, {

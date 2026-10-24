@@ -38,6 +38,20 @@
     }
     var CFG = W.__WCI_CFG || {}; // prelude-injected config: { allTraffic: true }
 
+    // Idempotency guard. The same context can receive this script twice:
+    // page evaluateOnNewDocument + a child session's
+    // Page.addScriptToEvaluateOnNewDocument, plus the mid-flight
+    // Runtime.evaluate that capture_server.js fires for already-loaded
+    // documents. A second run would re-wrap every hooked function and emit
+    // every event twice (per-run uids differ, so the Node-side dedupe cannot
+    // catch it). Non-enumerable so footprint checks don't see it.
+    try {
+        if (W.__WCI_INJECTED) return;
+        Object.defineProperty(W, '__WCI_INJECTED', { value: true, enumerable: false, configurable: true });
+    } catch (e) {
+        try { W.__WCI_INJECTED = true; } catch (e2) {}
+    }
+
     // ---------------- transport ----------------
     var bindingFn = null;
     try { if (typeof W.__wci === 'function') bindingFn = W.__wci; } catch (e) {}
@@ -631,16 +645,22 @@
                 return function getRandomValues(array) {
                     var ret = origGetRandomValues.apply(this, arguments);
                     try {
-                        if (shouldLogRandom()) {
-                            var hex = '';
+                    if (shouldLogRandom()) {
+                        // hex only makes sense for byte arrays - Uint32Array
+                        // etc. index past the byteToHex table and yield
+                        // "undefined" filler.
+                        var isBytes = array.constructor && array.constructor.name === 'Uint8Array';
+                        var hex = '';
+                        if (isBytes) {
                             var limit = Math.min(array.length, 64);
                             for (var i = 0; i < limit; i++) hex += byteToHex[array[i]];
-                            emit('random', {
-                                t: array.constructor && array.constructor.name,
-                                len: array.length, hex: hex,
-                                raw: JSON.stringify([{ __t: array.constructor && array.constructor.name, len: array.length, hex: hex }])
-                            });
                         }
+                        emit('random', {
+                            t: array.constructor && array.constructor.name,
+                            len: array.length, hex: hex,
+                            raw: JSON.stringify([{ __t: array.constructor && array.constructor.name, len: array.length, hex: hex }])
+                        });
+                    }
                     } catch (e) {}
                     return ret;
                 };

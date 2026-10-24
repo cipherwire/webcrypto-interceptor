@@ -363,7 +363,27 @@ iv:   fedcba9876543210fedcba9876543210
 1 key/iv pair(s) extracted from session_capture_1730000000.jsonl
 ```
 
-### 2. Verify Candidate Reimplementations
+### 2. Reconstruct the Site's Crypto Protocol
+
+`crypto-recipe.js` replays a session's CDP-boundary crypto calls (`crypto_call` records, with serialized arguments since 0.4.2) in order, collapses proof-of-work digest bursts, and prints the per-target protocol checklist:
+
+```bash
+node scripts/crypto-recipe.js session_capture_1730000000.jsonl
+```
+
+#### Example Output:
+```text
+=== other:embed.example/t8p/abc123 — 13 crypto call(s), 10 step(s) ===
+  1. generateKey  Wn
+  2. exportKey x2  Wn
+  3. sign  ar
+  4. digest x3  qe  <-- proof-of-work style burst
+  5. importKey  La
+      args [{"format":"raw"},{"__t":"Uint8Array","len":32,"hex":"47e82b..."}]
+  6. decrypt  La
+```
+
+### 3. Verify Candidate Reimplementations
 
 When reverse engineering custom cryptographic routines or payload packers, capture ground-truth executions using `--hook-return`:
 

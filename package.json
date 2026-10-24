@@ -1,6 +1,6 @@
 {
   "name": "webcrypto-interceptor",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Stealth CDP-based reverse-engineering toolkit: capture crypto.subtle calls, network traffic, workers, WASM and embedded secrets from any website.",
   "license": "MIT",
   "author": "cipherwire",
@@ -36,7 +36,8 @@
     "scripts/verify-reimpl.js",
     "scripts/unpack-strings.js",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "scripts/crypto-recipe.js"
   ],
   "scripts": {
     "start": "node capture_server.js",

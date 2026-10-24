@@ -79,6 +79,17 @@ function tryBase64ToHex(v) {
         if (/^[A-Za-z0-9+/=_-]{20,64}$/.test(trimmed)) {
             const buf = Buffer.from(trimmed, 'base64');
             if ([16, 24, 32].includes(buf.length)) {
+                // Key bytes that are themselves printable ASCII (very common:
+                // the site stores a hex-shaped key as a string, e.g.
+                // base64("47e82b5c...")) read far better as that ASCII than as
+                // hex-of-ASCII - report the form the site actually uses.
+                // Random binary keys decode non-printable ~always, so they
+                // still fall through to hex.
+                let printable = true;
+                for (const b of buf) {
+                    if (b < 0x20 || b > 0x7E) { printable = false; break; }
+                }
+                if (printable) return buf.toString('utf8');
                 return buf.toString('hex');
             }
         }

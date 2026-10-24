@@ -53,6 +53,9 @@ async function attachNetworkCapture(cdpSession) {
     // work off loadingFinished instead.
     const pending = new Map();
     const PENDING_TTL_MS = 300000; // stalled-forever requests must not leak
+    // Request-side recipe (method, headers, postData) per requestId - saved
+    // alongside interesting responses so a capture can be replayed with curl.
+    const requests = new Map();
 
     cdpSession.on('Network.responseReceived', (params) => {
         pending.set(params.requestId, { response: params.response, ts: Date.now() });
@@ -60,11 +63,21 @@ async function attachNetworkCapture(cdpSession) {
     cdpSession.on('Network.loadingFailed', (params) => {
         pending.delete(params.requestId);
     });
-    cdpSession.on('Network.requestWillBeSent', () => {
-        // opportunistic sweep: cheap, keeps the map bounded on long sessions
+    cdpSession.on('Network.requestWillBeSent', (params) => {
+        const r = params.request || {};
+        requests.set(params.requestId, {
+            ts: Date.now(),
+            method: r.method,
+            headers: r.headers || {},
+            postData: typeof r.postData === 'string' ? r.postData.substring(0, 8192) : undefined
+        });
+        // opportunistic sweep: cheap, keeps both maps bounded on long sessions
         const now = Date.now();
         for (const [k, v] of pending) {
             if (now - v.ts > PENDING_TTL_MS) pending.delete(k);
+        }
+        for (const [k, v] of requests) {
+            if (now - v.ts > PENDING_TTL_MS) requests.delete(k);
         }
     });
 
@@ -193,10 +206,47 @@ async function attachNetworkCapture(cdpSession) {
             trackHlsKey({ keyUri: hls.keyUri, iv: hls.iv, url });
         }
 
+        // HLS playlist analysis: is the stream actually encrypted, and can it
+        // be replayed with a one-liner? Signed-but-unencrypted HLS (the
+        // dominant streaming-site pattern) is directly fetchable while the
+        // token lives; base64-token URIs are resolved server-side only.
+        if (scanText.includes('#EXTM3U')) {
+            reportHlsInfo(url, response.status, scanText);
+        }
+
+        const reqInfo = requests.get(params.requestId);
+        requests.delete(params.requestId);
+
         const preview = body.length > 1500 ? body.substring(0, 1500) + '...' : body;
         console.log(`   ${C.dim}${preview}${C.reset}`);
-        writeLog({ type: 'http_response', url, status: response.status, body });
+        writeLog({
+            type: 'http_response',
+            url,
+            status: response.status,
+            body,
+            request: reqInfo ? { method: reqInfo.method, headers: reqInfo.headers, postData: reqInfo.postData } : undefined
+        });
     });
+}
+
+// Console + JSONL annotations for a captured HLS playlist. Deduped per URL:
+// players re-fetch manifests constantly (quality switches, seeks).
+function reportHlsInfo(url, status, text) {
+    if (alreadySeen('hlshint:' + url, status)) return;
+    const isMaster = /#EXT-X-STREAM-INF/.test(text);
+    const hasKey = /#EXT-X-KEY/.test(text);
+    if (isMaster && !hasKey) {
+        console.log(`   ${C.hlgrn}🎬 HLS master playlist - segments NOT encrypted (no #EXT-X-KEY)${C.reset}`);
+        console.log(`   ${C.dim}ffmpeg -i "${url}" -c copy out.mkv${C.reset}`);
+        writeLog({ type: 'hls_unencrypted', url, hint: `ffmpeg -i "${url}" -c copy out.mkv` });
+    } else if (hasKey) {
+        console.log(`   ${C.dim}(HLS playlist declares #EXT-X-KEY - segment-level encryption, see HLS AES KEY URI above if captured)${C.reset}`);
+    }
+    const tokenUris = text.match(/URI="?([A-Za-z0-9+/=]{80,})"?/g) || [];
+    if (tokenUris.length) {
+        console.log(`   ${C.dim}${tokenUris.length} playlist URI(s) are opaque base64 tokens - resolved server-side, not client-side crypto${C.reset}`);
+        writeLog({ type: 'hls_token_uris', url, count: tokenUris.length });
+    }
 }
 
 module.exports = { attachNetworkCapture, isMediaSegment };

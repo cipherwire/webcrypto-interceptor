@@ -114,15 +114,23 @@ const tagMap = {
     wasm:          (d) => [`${C.magenta}[🧬 WASM INJECT]${C.reset}`, `WebAssembly.${d.method} of ${d.bytes} bytes hash=${d.hash}`]
 };
 
+// Console-only truncation: a single popunder beacon can carry a 2KB query
+// string and drown the stream. The JSONL mirror (structuredToLegacy below)
+// always keeps the full text.
+function clip(s, n) {
+    s = String(s === undefined || s === null ? '' : s);
+    return s.length > n ? s.substring(0, n) + '…' : s;
+}
+
 function logStructured(evt, targetLabel) {
     const d = evt.data || {};
     const render = tagMap[evt.type];
     if (evt.type === 'wasm_hex') return; // handled by dump path below
     if (render) {
         const [tag, rest] = render(d);
-        console.log(`\n${tag}${targetLabel ? ` ${C.dim}(${targetLabel})${C.reset}` : ''} ${rest}`);
+        console.log(`\n${tag}${targetLabel ? ` ${C.dim}(${targetLabel})${C.reset}` : ''} ${clip(rest, 400)}`);
     } else {
-        console.log(`${C.blue}[⚓ EVENT]${C.reset} ${C.dim}${evt.type}${C.reset} ${JSON.stringify(d).substring(0, 300)}`);
+        console.log(`${C.blue}[⚓ EVENT]${C.reset} ${C.dim}${evt.type}${C.reset} ${clip(JSON.stringify(d), 300)}`);
     }
     // Persist a plain-text mirror of the event (same shape as the legacy
     // console format so post-processors like scripts/extract-keys.js work

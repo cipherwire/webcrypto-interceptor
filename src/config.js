@@ -21,4 +21,11 @@ const HOOK_MAX_RECORDS = 5000;
 const HOOK_PRINT_FIRST = 20;
 const HOOK_PRINT_EVERY = 100;
 
-module.exports = { SUBTLE_METHODS, RESP_KEYWORDS, SKIP_RESP_EXT, SKIP_RESP_CT, HOOK_MAX_RECORDS, HOOK_PRINT_FIRST, HOOK_PRINT_EVERY };
+// CDP crypto breakpoints pause the page on EVERY crypto.subtle call. Proof-of-
+// work scripts loop digest() hundreds or thousands of times; without a cap the
+// pause/resume round-trips visibly stall the site and flood the log. Per
+// method, the first N hits per rolling second are recorded, the rest are
+// resumed silently and summarized when the burst ends.
+const CRYPTO_BP_RATE_LIMIT = 30;
+
+module.exports = { SUBTLE_METHODS, RESP_KEYWORDS, SKIP_RESP_EXT, SKIP_RESP_CT, HOOK_MAX_RECORDS, HOOK_PRINT_FIRST, HOOK_PRINT_EVERY, CRYPTO_BP_RATE_LIMIT };
