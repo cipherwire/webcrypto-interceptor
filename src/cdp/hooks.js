@@ -27,8 +27,18 @@ const { HOOK_MAX_RECORDS, HOOK_PRINT_FIRST, HOOK_PRINT_EVERY } = require('../con
 
 const ARGS_EXPR = 'JSON.stringify(Array.prototype.slice.call(arguments))';
 
+// Hook expressions are evaluated once per execution context, which races page
+// script execution: a function defined by a <script> tag usually does not
+// exist yet, the arm pass sees `undefined`, and the hook never fires. Unresolved
+// expressions are therefore re-evaluated on a short timer until they resolve,
+// the context dies, or the attempt budget runs out. Interval/attempts are
+// overridable through createHookState opts for unit tests.
+const HOOK_REARM_INTERVAL_MS = 1000;
+const HOOK_REARM_MAX_ATTEMPTS = 15;
+
 // Per-session hook state. hookSpecs: [{ expr, captureReturn, traceFlow }]
-function createHookState(hookSpecs) {
+function createHookState(hookSpecs, opts) {
+    const options = opts || {};
     const specs = (hookSpecs || []).map(s => ({
         expr: s.expr,
         label: s.expr,
@@ -42,7 +52,9 @@ function createHookState(hookSpecs) {
     return {
         specs,
         callBp: new Map(),   // breakpointId -> spec index
-        retBp: new Map()     // breakpointId -> spec index
+        retBp: new Map(),    // breakpointId -> spec index
+        rearmIntervalMs: Number.isFinite(options.rearmIntervalMs) ? options.rearmIntervalMs : HOOK_REARM_INTERVAL_MS,
+        rearmMaxAttempts: Number.isFinite(options.rearmMaxAttempts) ? options.rearmMaxAttempts : HOOK_REARM_MAX_ATTEMPTS
     };
 }
 
@@ -58,8 +70,12 @@ function armedFor(session) {
 
 async function armHooks(cdpSession, hookState, targetLabel, contextId) {
     if (!hookState.specs.length) return 0;
-    const perContext = { breakpointIds: [], objectIds: [] };
+    // Always store the per-context record: even when nothing arms on the first
+    // pass, the re-arm timer and cleanupHookContexts need it to exist.
+    const perContext = { breakpointIds: [], objectIds: [], rearmTimer: null, rearmAttempts: 0 };
+    armedFor(cdpSession).set(contextId, perContext);
     let armed = 0;
+    const unresolved = [];
     for (let i = 0; i < hookState.specs.length; i++) {
         const spec = hookState.specs[i];
         try {
@@ -68,7 +84,10 @@ async function armHooks(cdpSession, hookState, targetLabel, contextId) {
                 contextId,
                 silent: true
             });
-            if (!(fn.result && fn.result.type === 'function' && fn.result.objectId)) continue;
+            if (!(fn.result && fn.result.type === 'function' && fn.result.objectId)) {
+                unresolved.push(i);
+                continue;
+            }
             perContext.objectIds.push(fn.result.objectId);
             const bp = await cdpSession.send('Debugger.setBreakpointOnFunctionCall', {
                 objectId: fn.result.objectId
@@ -77,14 +96,70 @@ async function armHooks(cdpSession, hookState, targetLabel, contextId) {
                 hookState.callBp.set(bp.breakpointId, i);
                 perContext.breakpointIds.push(bp.breakpointId);
                 armed++;
+            } else {
+                unresolved.push(i);
             }
-        } catch { /* expression may not resolve in this context */ }
+        } catch { /* expression may not resolve in this context */ unresolved.push(i); }
     }
     if (armed) {
-        armedFor(cdpSession).set(contextId, perContext);
         console.log(`${C.magenta}[🪝 HOOK ARMED]${C.reset} ${armed} function hook(s) on ${C.cyan}${targetLabel}${C.reset} (context ${contextId})`);
     }
+    if (unresolved.length) {
+        scheduleHookRearm(cdpSession, hookState, targetLabel, contextId, perContext, unresolved);
+    }
     return armed;
+}
+
+// Re-evaluate hook expressions that did not resolve when the context was
+// created. Page scripts define their targets after the context exists, so the
+// first pass loses the race; this keeps trying on a timer until the function
+// appears, the context is destroyed (cleanup clears the timer), or the
+// attempt budget is exhausted (e.g. a typo'd expression must not retry
+// forever).
+function scheduleHookRearm(cdpSession, hookState, targetLabel, contextId, perContext, unresolvedIndices) {
+    if (perContext.rearmTimer) return; // a retry pass is already scheduled
+    if (perContext.rearmAttempts >= hookState.rearmMaxAttempts) return;
+    perContext.rearmAttempts++;
+    const timer = setTimeout(async () => {
+        if (perContext.rearmTimer !== timer) return; // cleaned up while waiting
+        perContext.rearmTimer = null;
+        const still = [];
+        let armedNow = 0;
+        for (const i of unresolvedIndices) {
+            try {
+                const fn = await cdpSession.send('Runtime.evaluate', {
+                    expression: hookState.specs[i].expr,
+                    contextId,
+                    silent: true
+                });
+                if (!(fn.result && fn.result.type === 'function' && fn.result.objectId)) {
+                    still.push(i);
+                    continue;
+                }
+                perContext.objectIds.push(fn.result.objectId);
+                const bp = await cdpSession.send('Debugger.setBreakpointOnFunctionCall', {
+                    objectId: fn.result.objectId
+                });
+                if (bp.breakpointId) {
+                    hookState.callBp.set(bp.breakpointId, i);
+                    perContext.breakpointIds.push(bp.breakpointId);
+                    armedNow++;
+                } else {
+                    still.push(i);
+                }
+            } catch {
+                return; // context gone; cleanupHookContexts already ran
+            }
+        }
+        if (armedNow) {
+            console.log(`${C.magenta}[🪝 HOOK REARMED]${C.reset} ${armedNow} hook(s) appeared later on ${C.cyan}${targetLabel}${C.reset} (context ${contextId})`);
+        }
+        if (still.length) {
+            scheduleHookRearm(cdpSession, hookState, targetLabel, contextId, perContext, still);
+        }
+    }, hookState.rearmIntervalMs);
+    perContext.rearmTimer = timer;
+    if (typeof timer.unref === 'function') timer.unref(); // never keep the process alive for a retry
 }
 
 // Tear down everything armed for contexts that just died.
@@ -93,6 +168,10 @@ async function cleanupHookContexts(cdpSession, destroyedContextIds, hookState) {
     for (const contextId of destroyedContextIds) {
         const record = perSession.get(contextId);
         if (!record) continue;
+        if (record.rearmTimer) {
+            clearTimeout(record.rearmTimer);
+            record.rearmTimer = null;
+        }
         for (const bpId of record.breakpointIds) {
             try { await cdpSession.send('Debugger.removeBreakpoint', { breakpointId: bpId }); } catch {}
             hookState.callBp.delete(bpId);

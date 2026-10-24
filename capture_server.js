@@ -13,7 +13,7 @@ const fs = require('fs');
 const { C } = require('./src/util/colors');
 const { closeLog, setLogDir, getLogFile, startTerminalCapture, stopTerminalCapture } = require('./src/util/log');
 const { shortUrl } = require('./src/util/decoders');
-const { attachToSession } = require('./src/cdp/session');
+const { attachToSession, ensureBinding } = require('./src/cdp/session');
 const { setExtractDir, getExtractDir } = require('./src/cdp/extract');
 const { printSummary, writeExtractedSummary } = require('./src/util/summary');
 const { parseArgv, HELP } = require('./src/cli');
@@ -98,6 +98,7 @@ const { resolveBrowserPath } = require('./src/util/browser');
         // --remote-debugging-port. Nothing listens on a TCP port for the
         // target page (or anything else on the machine) to discover and scan.
         pipe: true,
+        ignoreDefaultArgs: ['--enable-automation'],
         args: launchArgs
     });
 
@@ -182,8 +183,42 @@ const { resolveBrowserPath } = require('./src/util/browser');
     // of crypto. We attach to their target, evaluate the hook source there
     // (stealth.js is globalThis-based, so it works), and rely on the __wci
     // binding channel for event transport.
+    //
+    // The main page target already has a full capture session (mainClient
+    // above). Register it BEFORE the listeners fire: browser 'targetchanged'
+    // fires for the main target on every navigation commit, and without this
+    // marker tryAttachTarget opens a second CDP session on the same page -
+    // doubling every breakpoint-armed record (crypto_call, hook_call, ...).
     const attachedTargets = new Set();
+    attachedTargets.add(page.target());
     const HOOKABLE_TARGET_TYPES = ['page', 'iframe', 'other', 'webview', 'worker', 'shared_worker', 'service_worker'];
+
+    function isChallengeTarget(urlStr) {
+        if (!urlStr) return false;
+        const lower = String(urlStr).toLowerCase();
+        return lower.includes('challenges.cloudflare.com')
+            || lower.includes('/cdn-cgi/challenge-platform/')
+            || lower.includes('turnstile');
+    }
+
+    // Puppeteer reports dedicated workers (CDP target type 'worker') as type
+    // 'other', so a naive type check never took the worker branch for them:
+    // they got the page treatment (Page.addScriptToEvaluateOnNewDocument,
+    // which cannot apply to a worker) and stealth.js was never injected -
+    // only the CDP-breakpoint capture worked there. Probe the scope instead:
+    // a worker global has WorkerGlobalScope and no document.
+    async function isWorkerTarget(childSession) {
+        try {
+            const r = await childSession.send('Runtime.evaluate', {
+                expression: 'typeof document === "undefined" && typeof WorkerGlobalScope !== "undefined"',
+                returnByValue: true,
+                silent: true
+            });
+            return !!(r.result && r.result.value);
+        } catch (e) {
+            return false;
+        }
+    }
 
     async function tryAttachTarget(target) {
         if (attachedTargets.has(target)) return;
@@ -191,17 +226,26 @@ const { resolveBrowserPath } = require('./src/util/browser');
         let url;
         try { type = target.type(); url = target.url(); } catch (e) { return; }
         if (!HOOKABLE_TARGET_TYPES.includes(type)) return;
-        if (url === 'about:blank' || url.startsWith('devtools://') || url.startsWith('chrome://')) return;
+        if (!url || url === 'about:blank' || url.startsWith('devtools://') || url.startsWith('chrome://')) return;
+        if (isChallengeTarget(url)) return;
         attachedTargets.add(target);
 
         let childSession = null;
         try { childSession = await target.createCDPSession(); } catch (e) { return; }
         try {
-            if (type === 'worker' || type === 'shared_worker' || type === 'service_worker') {
+            let workerScope = type === 'worker' || type === 'shared_worker' || type === 'service_worker';
+            if (!workerScope && type === 'other') {
+                workerScope = await isWorkerTarget(childSession);
+            }
+            if (workerScope) {
                 // Workers have no Page domain: inject directly into the global
                 // scope. If the worker already ran, we still catch everything
                 // going forward (hooks wrap prototypes, not call sites).
+                // The binding MUST exist before injection: stealth.js captures
+                // __wci when it runs, so injecting first means worker events
+                // fall back to the console channel forever.
                 await childSession.send('Runtime.enable');
+                await ensureBinding(childSession);
                 await childSession.send('Runtime.evaluate', {
                     expression: hookCode,
                     silent: true

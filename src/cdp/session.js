@@ -9,10 +9,23 @@ const { createVMState, armVMWatchers, handleVMPause } = require('./vm');
 
 const BINDING_NAME = '__wci';
 
+// Idempotently install the structured-event binding on a session. Callers that
+// inject hook code into an already-running context (worker targets) must call
+// this BEFORE injection: stealth.js captures __wci at injection time, so a
+// later addBinding would leave the page-side hooks on the console channel.
+async function ensureBinding(cdpSession) {
+    try {
+        await cdpSession.send('Runtime.addBinding', { name: BINDING_NAME });
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
 async function attachToSession(cdpSession, targetLabel, opts) {
     const options = opts || {};
     const bpMap = {};
-    const hookState = createHookState(options.hooks);
+    const hookState = createHookState(options.hooks, options);
     const vmState = createVMState(options.traceVM);
 
     // ---- structured event transport -------------------------------------
@@ -22,10 +35,7 @@ async function attachToSession(cdpSession, targetLabel, opts) {
     // targets rely on this channel: their console output is NOT relayed
     // through puppeteer's page.on('console').
     let bindingReady = false;
-    try {
-        await cdpSession.send('Runtime.addBinding', { name: BINDING_NAME });
-        bindingReady = true;
-    } catch (e) {}
+    bindingReady = await ensureBinding(cdpSession);
 
     if (bindingReady) {
         cdpSession.on('Runtime.bindingCalled', (params) => {
@@ -62,17 +72,32 @@ async function attachToSession(cdpSession, targetLabel, opts) {
         } catch (e) {}
     });
 
+    function isChallengeContext(context) {
+        if (!context) return false;
+        const origin = (context.origin || '').toLowerCase();
+        const name = (context.name || '').toLowerCase();
+        return origin.includes('challenges.cloudflare.com')
+            || origin.includes('/cdn-cgi/challenge-platform/')
+            || origin.includes('turnstile')
+            || name.includes('challenges.cloudflare.com')
+            || name.includes('/cdn-cgi/challenge-platform/')
+            || name.includes('turnstile');
+    }
+
     // ---- crypto breakpoints + user function hooks --------------------------
+    // Note: VM watchers are NOT armed here. They use Debugger.setBreakpointByUrl,
+    // which is URL-scoped across the whole session and resolves lazily when a
+    // matching script parses - re-arming per context only stacked duplicate
+    // breakpoints on the same location.
     cdpSession.on('Runtime.executionContextCreated', async (params) => {
-        const contextId = params.context.id;
+        const ctx = params.context || {};
+        if (isChallengeContext(ctx)) return;
+        const contextId = ctx.id;
         try {
             await armCryptoBreakpoints(cdpSession, targetLabel, bpMap, contextId);
         } catch (e) {}
         try {
             await armHooks(cdpSession, hookState, targetLabel, contextId);
-        } catch (e) {}
-        try {
-            await armVMWatchers(cdpSession, vmState, targetLabel);
         } catch (e) {}
     });
     cdpSession.on('Runtime.executionContextDestroyed', async (params) => {
@@ -110,4 +135,4 @@ async function attachToSession(cdpSession, targetLabel, opts) {
     });
 }
 
-module.exports = { attachToSession };
+module.exports = { attachToSession, ensureBinding, BINDING_NAME };

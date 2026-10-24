@@ -19,14 +19,14 @@ export default [
                 window: 'readonly', navigator: 'readonly', document: 'readonly',
                 fetch: 'readonly', WebSocket: 'readonly', Worker: 'readonly',
                 MessagePort: 'readonly', WebAssembly: 'readonly', Storage: 'readonly',
-                XMLHttpRequest: 'readonly', URL: 'readonly', Blob: 'readonly',
+                XMLHttpRequest: 'readonly', URL: 'readonly', URLSearchParams: 'readonly', Blob: 'readonly',
                 FormData: 'readonly', ArrayBuffer: 'readonly', Uint8Array: 'readonly',
                 CryptoKey: 'readonly', TextDecoder: 'readonly', TextEncoder: 'readonly', btoa: 'readonly', atob: 'readonly', Uint32Array: 'readonly', Int32Array: 'readonly', AbortSignal: 'readonly', localStorage: 'readonly',
                 sessionStorage: 'readonly', WeakMap: 'readonly', Proxy: 'readonly',
                 Reflect: 'readonly', Object: 'readonly', JSON: 'readonly',
                 Math: 'readonly', Date: 'readonly', Promise: 'readonly', Set: 'readonly',
                 Map: 'readonly', Function: 'readonly', Error: 'readonly',
-                setInterval: 'readonly', clearInterval: 'readonly', setTimeout: 'readonly',
+                setInterval: 'readonly', clearInterval: 'readonly', setTimeout: 'readonly', clearTimeout: 'readonly',
                 globalThis: 'readonly', self: 'readonly'
             }
         },

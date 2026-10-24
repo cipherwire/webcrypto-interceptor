@@ -20,11 +20,36 @@
     'use strict';
 
     var W = typeof globalThis !== 'undefined' ? globalThis : self;
+
+    // Bail out immediately inside Cloudflare challenge iframes or workers to preserve native execution
+    if (W.location) {
+        var locHost = (W.location.hostname || '').toLowerCase();
+        var locPath = (W.location.pathname || '').toLowerCase();
+        var locHref = (W.location.href || '').toLowerCase();
+        if (
+            locHost.includes('challenges.cloudflare.com') ||
+            locHost.includes('turnstile') ||
+            locPath.includes('/cdn-cgi/challenge-platform/') ||
+            locHref.includes('challenges.cloudflare.com') ||
+            locHref.includes('/cdn-cgi/challenge-platform/')
+        ) {
+            return;
+        }
+    }
     var CFG = W.__WCI_CFG || {}; // prelude-injected config: { allTraffic: true }
 
     // ---------------- transport ----------------
     var bindingFn = null;
     try { if (typeof W.__wci === 'function') bindingFn = W.__wci; } catch (e) {}
+
+    // The Node side may register the __wci binding AFTER this script ran
+    // (worker targets are injected before the binding is installed). Re-check
+    // lazily on each emit instead of caching a stale null forever.
+    function getBinding() {
+        if (bindingFn) return bindingFn;
+        try { if (typeof W.__wci === 'function') bindingFn = W.__wci; } catch (e) {}
+        return bindingFn;
+    }
 
     var uidCounter = 0;
     var uidBase = Math.random().toString(36).slice(2, 10) + '-';
@@ -56,9 +81,10 @@
     }
 
     function emit(type, data) {
-        if (bindingFn) {
+        var fn = getBinding();
+        if (fn) {
             try {
-                bindingFn(JSON.stringify({ uid: newUid(), type: type, data: data }));
+                fn(JSON.stringify({ uid: newUid(), type: type, data: data }));
                 return;
             } catch (e) { /* fall through to console */ }
         }
@@ -72,7 +98,8 @@
     // reassembles. Falls back to the legacy "WASM-HEX <hash> <hex>" console
     // line when no binding exists.
     function emitWasmHex(hash, hex) {
-        if (!bindingFn) {
+        var fn = getBinding();
+        if (!fn) {
             try { W.console.log('[Reversed-Event] WASM-HEX ' + hash + ' ' + hex); } catch (e) {}
             return;
         }
@@ -80,7 +107,7 @@
         var total = Math.ceil(hex.length / CHUNK_SIZE);
         for (var i = 0; i < total; i++) {
             try {
-                bindingFn(JSON.stringify({
+                fn(JSON.stringify({
                     uid: uid + '#' + i,
                     transferId: uid,
                     type: 'wasm_hex',
@@ -213,12 +240,15 @@
             return '[binary ' + (payload.byteLength !== undefined ? payload.byteLength : payload.length) + 'B]';
         }
         if (typeof Blob !== 'undefined' && payload instanceof Blob) {
-            return '[blob ' + payload.size + 'B ' + payload.type + ']';
+            return '[blob ' + payload.size + 'B' + (payload.type ? ' ' + payload.type : '') + ']';
         }
         if (typeof FormData !== 'undefined' && payload instanceof FormData) {
             var parts = [];
             try { var it = payload.entries(), step; while (!(step = it.next()).done) { parts.push(step.value[0] + '=' + (typeof step.value[1] === 'string' ? step.value[1] : '[file]')); } } catch (e) {}
             return parts.join('&');
+        }
+        if (typeof URLSearchParams !== 'undefined' && payload instanceof URLSearchParams) {
+            return payload.toString();
         }
         return payload;
     }
@@ -301,8 +331,34 @@
                 try {
                     if (!isInterestingUrl(instance.url)) return;
                     var data = evt.data;
-                    if (data instanceof ArrayBuffer) data = '[binary ws ' + data.byteLength + 'B]';
-                    else if (typeof data === 'string' && data.length > 1000) data = data.substring(0, 1000) + '...';
+                    if (data instanceof ArrayBuffer || (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView(data))) {
+                        data = '[binary ws ' + (data.byteLength !== undefined ? data.byteLength : data.length) + 'B]';
+                    } else if (typeof Blob !== 'undefined' && data instanceof Blob) {
+                        // binaryType defaults to 'blob': binary frames arrive as
+                        // Blobs, which JSON.stringify collapses to {}. Read small
+                        // ones and emit the text when it looks like text; describe
+                        // size instead when the content is binary.
+                        if (data.size <= 65536 && typeof data.text === 'function') {
+                            data.text().then(function (txt) {
+                                var printable = 0, i, c;
+                                for (i = 0; i < txt.length; i++) {
+                                    c = txt.charCodeAt(i);
+                                    if ((c >= 0x20 && c <= 0x7E) || c === 9 || c === 10 || c === 13 || c > 0x7F) printable++;
+                                }
+                                if (txt.length > 0 && printable / txt.length >= 0.9) {
+                                    emit('ws_recv', { url: instance.url, body: txt.length > 1000 ? txt.substring(0, 1000) + '...' : txt });
+                                } else {
+                                    emit('ws_recv', { url: instance.url, body: '[binary ws ' + data.size + 'B]' });
+                                }
+                            }).catch(function () {
+                                emit('ws_recv', { url: instance.url, body: '[blob ' + data.size + 'B' + (data.type ? ' ' + data.type : '') + ']' });
+                            });
+                            return;
+                        }
+                        data = '[blob ' + data.size + 'B' + (data.type ? ' ' + data.type : '') + ']';
+                    } else if (typeof data === 'string' && data.length > 1000) {
+                        data = data.substring(0, 1000) + '...';
+                    }
                     emit('ws_recv', { url: instance.url, body: data });
                 } catch (e) {}
             });
@@ -514,6 +570,7 @@
     function previewMsg(msg) {
         if (typeof msg === 'string') return msg.substring(0, 500);
         if (msg && msg.byteLength !== undefined) return '[binary ' + msg.byteLength + 'B]';
+        if (typeof Blob !== 'undefined' && msg instanceof Blob) return '[blob ' + msg.size + 'B' + (msg.type ? ' ' + msg.type : '') + ']';
         try { return JSON.stringify(msg).substring(0, 500); } catch (e) { return '[unserializable]'; }
     }
 
