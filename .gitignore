@@ -21,6 +21,7 @@ scripts/*
 !scripts/extract-keys.js
 !scripts/verify-reimpl.js
 !scripts/unpack-strings.js
+!scripts/crypto-recipe.js
 
 # Log files
 *.log
