@@ -22,10 +22,18 @@ test('tryBase64ToHex passes through real hex', () => {
 });
 
 test('tryBase64ToHex decodes base64 to AES-sized hex', () => {
-    // 16 raw bytes -> base64 -> hex
-    const buf = Buffer.from('0123456789abcdef'); // exactly 16 bytes
+    // 16 raw BINARY bytes -> base64 -> hex (non-printable bytes must stay hex)
+    const buf = Buffer.from([0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f]);
     const b64 = buf.toString('base64');
     assert.equal(tryBase64ToHex(b64), buf.toString('hex'));
+});
+
+test('tryBase64ToHex returns printable key strings as ASCII, not hex-of-ascii', () => {
+    // Real-world shape (piratexplay): the site stores a hex-shaped key as a
+    // string and base64-encodes it. The ASCII form IS the key the site uses.
+    const key = '47e82b5c836178e7a9e5855016ab2cda';
+    const b64 = Buffer.from(key, 'utf8').toString('base64');
+    assert.equal(tryBase64ToHex(b64), key);
 });
 
 test('tryBase64ToHex leaves non-key strings alone', () => {
