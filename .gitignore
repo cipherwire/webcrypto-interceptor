@@ -38,6 +38,7 @@ yarn-error.log*
 # Test and coverage artifacts
 coverage/
 .nyc_output/
+reports/
 
 # OS metadata
 .DS_Store
