@@ -13,6 +13,7 @@ const ANSI_REGEX = /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-
 
 function stripAnsi(str) {
     if (typeof str !== 'string') return str;
+    if (str.indexOf('\u001b') === -1 && str.indexOf('\u009b') === -1) return str;
     return str.replace(ANSI_REGEX, '');
 }
 

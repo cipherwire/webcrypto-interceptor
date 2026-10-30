@@ -9,10 +9,12 @@ const { SUBTLE_METHODS, CRYPTO_BP_RATE_LIMIT } = require('../config');
 // matter here. Evaluated on the paused wrapper frame via evaluateOnCallFrame;
 // the outer `arguments` resolves in that frame's scope.
 const ARGS_EXPR = `(function (args) {
+    var HEX_LUT = new Array(256);
+    for (var h = 0; h < 256; h++) HEX_LUT[h] = (h < 16 ? '0' : '') + h.toString(16);
     function bytes(u, name) {
         var hex = '';
         var limit = Math.min(u.length, 512);
-        for (var i = 0; i < limit; i++) hex += (u[i] < 16 ? '0' : '') + u[i].toString(16);
+        for (var i = 0; i < limit; i++) hex += HEX_LUT[u[i]];
         var out = { __t: name || 'Bytes', len: u.length, hex: hex };
         try {
             var utf8 = new TextDecoder('utf-8', { fatal: false }).decode(u.subarray(0, 512));

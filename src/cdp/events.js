@@ -19,17 +19,17 @@ const { C } = require('../util/colors');
 const { writeLog } = require('../util/log');
 const { trackEvent, trackWasmDump } = require('../util/summary');
 
-// Dedupe window for event uids (Set with FIFO cap).
-const seenUids = new Set();
+// Dedupe window for event uids (two-generation bounded set swap).
+let seenCurrent = new Set();
+let seenPrevious = new Set();
 const MAX_UIDS = 20000;
 function isDuplicate(uid) {
     if (!uid) return false;
-    if (seenUids.has(uid)) return true;
-    seenUids.add(uid);
-    if (seenUids.size > MAX_UIDS) {
-        // Sets keep insertion order - drop the oldest fifth.
-        let drop = Math.floor(MAX_UIDS / 5);
-        for (const v of seenUids) { seenUids.delete(v); if (--drop <= 0) break; }
+    if (seenCurrent.has(uid) || seenPrevious.has(uid)) return true;
+    seenCurrent.add(uid);
+    if (seenCurrent.size >= MAX_UIDS / 2) {
+        seenPrevious = seenCurrent;
+        seenCurrent = new Set();
     }
     return false;
 }

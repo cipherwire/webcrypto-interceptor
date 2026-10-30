@@ -101,7 +101,7 @@ function tryBase64ToHex(v) {
 }
 
 function extractContentKey(body) {
-    const m = body.match(/"(ck|key|contentKey|contentkey|aesKey|aeskey)"\s*:\s*"([^"]+)"/i);
+    const m = body.match(/['"]?\b(ck|key|contentKey|contentkey|aesKey|aeskey)\b['"]?\s*[:=]\s*['"`]([^'"`\r\n]+)['"`]/i);
     if (!m) return null;
     const raw = m[2];
     const unescaped = decodeHexEscapes(raw);
@@ -110,7 +110,7 @@ function extractContentKey(body) {
 }
 
 function extractHlsKeyUri(body) {
-    const m = body.match(/#EXT-X-KEY:[^\r\n]*?URI="([^"]+)"(?:[^\r\n]*?IV=(0x[0-9a-fA-F]+))?/i);
+    const m = body.match(/#EXT-X-KEY:[^\r\n]*?URI=['"]?([^'",\s\r\n]+)['"]?(?:[^\r\n]*?IV=(0x[0-9a-fA-F]+))?/i);
     if (!m) return null;
     return { keyUri: m[1], iv: m[2] || null };
 }

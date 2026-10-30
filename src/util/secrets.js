@@ -10,16 +10,16 @@ const { C } = require('./colors');
 const { writeLog } = require('./log');
 const { isPacked, unpack } = require('./decoders');
 
-const seenSecrets = new Set();
+let seenSecretsCurrent = new Set();
+let seenSecretsPrevious = new Set();
 const MAX_SEEN = 20000;
 
 function noteSeen(sig) {
-    if (seenSecrets.has(sig)) return true;
-    seenSecrets.add(sig);
-    // FIFO cap: Sets preserve insertion order; drop the oldest fifth when full
-    if (seenSecrets.size > MAX_SEEN) {
-        let drop = Math.floor(MAX_SEEN / 5);
-        for (const v of seenSecrets) { seenSecrets.delete(v); if (--drop <= 0) break; }
+    if (seenSecretsCurrent.has(sig) || seenSecretsPrevious.has(sig)) return true;
+    seenSecretsCurrent.add(sig);
+    if (seenSecretsCurrent.size >= MAX_SEEN / 2) {
+        seenSecretsPrevious = seenSecretsCurrent;
+        seenSecretsCurrent = new Set();
     }
     return false;
 }
@@ -75,7 +75,7 @@ function scanForSecrets(body, sourceUrl) {
     }
 
     // 4. Bare AES-shaped hex constants assigned to a key-like variable.
-    const hexKeyRe = /\b(?:key|iv|salt|secret|token)\w*\s*[:=]\s*['"]([a-fA-F0-9]{32}|[a-fA-F0-9]{48}|[a-fA-F0-9]{64})['"]/g;
+    const hexKeyRe = /\b\w*(?:key|iv|salt|secret|token)\w*\s*[:=]\s*['"]([a-fA-F0-9]{32}|[a-fA-F0-9]{48}|[a-fA-F0-9]{64})['"]/gi;
     while ((m = hexKeyRe.exec(body)) !== null) {
         findings.push({ type: `HEX_KEY_${m[1].length * 4}bit`, value: m[1] });
     }

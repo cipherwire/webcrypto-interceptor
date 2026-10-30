@@ -102,7 +102,7 @@ function parseArgv(argv) {
         throw usageError(`URL must start with http:// or https:// (got "${url}").`);
     }
 
-    let timeout = parseInt(parsed.values.timeout, 10);
+    let timeout = Number(parsed.values.timeout);
     if (!Number.isFinite(timeout) || timeout <= 0) {
         throw usageError(`--timeout must be a positive number of seconds (got "${parsed.values.timeout}").`);
     }
@@ -125,7 +125,7 @@ function parseArgv(argv) {
 
     let heapDiff = 0;
     if (parsed.values['heap-diff'] !== undefined) {
-        heapDiff = parseInt(parsed.values['heap-diff'], 10);
+        heapDiff = Number(parsed.values['heap-diff']);
         if (!Number.isFinite(heapDiff) || heapDiff < 0) {
             throw usageError(`--heap-diff must be a non-negative number of seconds (got "${parsed.values['heap-diff']}").`);
         }
